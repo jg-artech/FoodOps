@@ -1,0 +1,76 @@
+from logging.config import fileConfig
+from sqlalchemy import engine_from_config
+from sqlalchemy import pool
+from alembic import context
+import os
+import sys
+
+# Cargar .env
+from dotenv import load_dotenv
+load_dotenv()
+
+# Path setup - agregar raíz del proyecto
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, '../../..'))
+sys.path.insert(0, os.path.join(root_dir, 'src'))
+
+print(f"DEBUG: sys.path = {sys.path[0]}")
+
+# Importar Base
+try:
+    from foodops.db.models import Base
+    print("✅ Base importado exitosamente")
+except ImportError as e:
+    print(f"❌ Error importando Base: {e}")
+    # Fallback: crear Base vacío
+    from sqlalchemy.orm import declarative_base
+    Base = declarative_base()
+
+config = context.config
+
+# Obtener database URL desde .env
+database_url = os.getenv("DATABASE_SYNC_URL")
+print(f"DEBUG: DATABASE_SYNC_URL = {database_url}")
+
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
+else:
+    print("⚠️ WARNING: DATABASE_SYNC_URL no configurado en .env")
+
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+target_metadata = Base.metadata
+
+def run_migrations_offline() -> None:
+    url = config.get_main_option("sqlalchemy.url")
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+def run_migrations_online() -> None:
+    connectable = engine_from_config(
+        config.get_section(config.config_ini_section, {}),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata
+        )
+
+        with context.begin_transaction():
+            context.run_migrations()
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()
