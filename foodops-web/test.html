@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test Login FoodOps</title></head>
+<body style="font-family: Arial; padding: 20px;">
+<h1>Test Login FoodOps</h1>
+<button onclick="testLogin()" style="padding: 10px 20px; font-size: 16px;">Test Login</button>
+<hr>
+<pre id="result" style="background: #f0f0f0; padding: 10px; border-radius: 5px;"></pre>
+
+<script>
+async function testLogin() {
+  document.getElementById('result').textContent = 'Intentando conectar a http://localhost:8001/api/auth/login...'
+  
+  try {
+    const response = await fetch('http://localhost:8001/api/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username: 'admin', password: 'admin123'})
+    })
+    
+    console.log('Response status:', response.status)
+    const data = await response.json()
+    document.getElementById('result').textContent = JSON.stringify(data, null, 2)
+  } catch(err) {
+    document.getElementById('result').textContent = 'ERROR: ' + err.message
+    console.error('Fetch error:', err)
+  }
+}
+</script>
+</body>
+</html>

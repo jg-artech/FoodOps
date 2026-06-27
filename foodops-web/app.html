@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>FoodOps App</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"><\/script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial; background: #f5f5f5; }
+    .navbar { background: #333; color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+    .login-form { background: white; max-width: 400px; margin: 5rem auto; padding: 2rem; border-radius: 8px; }
+    input, select { width: 100%; padding: 0.75rem; margin: 0.5rem 0; border: 1px solid #ddd; border-radius: 4px; }
+    button { width: 100%; padding: 0.75rem; background: #007bff; color: white; border: none; cursor: pointer; margin-top: 0.5rem; }
+    .card { background: white; padding: 1.5rem; margin: 1rem 0; border-radius: 8px; }
+    .order { background: #f9f9f9; padding: 1rem; margin: 0.5rem 0; border-left: 4px solid #007bff; }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const { createApp, ref, computed, onMounted } = Vue;
+createApp({
+  template: '<div><div v-if="isAuth" class="navbar"><h1>FoodOps</h1><div><span style="color:white;margin-right:1rem;">{{user?.nombre_completo}}</span><button @click="logout" style="width:auto;">Logout</button></div></div><div v-if="!isAuth" class="login-form"><h1>Login</h1><input v-model="usr" placeholder="admin"/><input v-model="pwd" type="password" placeholder="admin123"/><button @click="doLogin" :disabled="busy">{{busy?"...":"Login"}}</button><p v-if="err" style="color:red;">{{err}}</p></div><div v-else class="container"><h1>Hola {{user?.nombre_completo}}</h1><div class="card"><h2>Nueva Orden</h2><input v-model="ord.cliente_nombre" placeholder="Nombre"/><input v-model="ord.cliente_telefono" placeholder="Tel"/><select v-model="ord.metodo_pago"><option value="efectivo">Efectivo</option><option value="tarjeta">Tarjeta</option></select><button @click="saveOrden" :disabled="busy">{{busy?"...":"Crear"}}</button><p v-if="msg" style="color:green;">{{msg}}</p></div><div class="card"><h2>Ordenes</h2><div v-if="ords.length"><div v-for="o in ords" :key="o.id" class="order"><p><strong>{{o.numero_orden}}</strong> - {{o.cliente_nombre}} - Q{{o.total}}</p></div></div><p v-else>Sin ordenes</p></div></div></div>',
+  setup() {
+    const tok = ref(localStorage.getItem("token") || "");
+    const usr = ref("admin");
+    const pwd = ref("admin123");
+    const err = ref("");
+    const msg = ref("");
+    const busy = ref(false);
+    const user = ref(null);
+    const ords = ref([]);
+    const ord = ref({cliente_nombre:"",cliente_telefono:"",metodo_pago:"efectivo",es_domicilio:false});
+    const isAuth = computed(() => !!tok.value);
+    
+    const doLogin = async () => {
+      busy.value = true;
+      err.value = "";
+      try {
+        let r = await fetch("http://localhost:8001/api/auth/login", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({username:usr.value, password:pwd.value})
+        });
+        let d = await r.json();
+        tok.value = d.access_token;
+        localStorage.setItem("token", d.access_token);
+        await getUser();
+        await getOrders();
+      } catch(e) {
+        err.value = e.message;
+      }
+      busy.value = false;
+    };
+    
+    const getUser = async () => {
+      let r = await fetch("http://localhost:8001/api/auth/me", {
+        headers: {"Authorization": "Bearer " + tok.value}
+      });
+      user.value = await r.json();
+    };
+    
+    const getOrders = async () => {
+      if(!user.value) return;
+      let r = await fetch("http://localhost:8001/api/ordenes/" + user.value.punto_id, {
+        headers: {"Authorization": "Bearer " + tok.value}
+      });
+      let d = await r.json();
+      ords.value = Array.isArray(d) ? d : [];
+    };
+    
+    const saveOrden = async () => {
+      if(!ord.value.cliente_nombre) { err.value = "Nombre requerido"; return; }
+      busy.value = true;
+      msg.value = "";
+      err.value = "";
+      try {
+        let r = await fetch("http://localhost:8001/api/ordenes/", {
+          method: "POST",
+          headers: {"Content-Type":"application/json", "Authorization": "Bearer " + tok.value},
+          body: JSON.stringify(ord.value)
+        });
+        let d = await r.json();
+        msg.value = "Orden: " + d.numero_orden;
+        ord.value = {cliente_nombre:"",cliente_telefono:"",metodo_pago:"efectivo",es_domicilio:false};
+        setTimeout(() => { getOrders(); msg.value = ""; }, 1500);
+      } catch(e) {
+        err.value = e.message;
+      }
+      busy.value = false;
+    };
+    
+    const logout = () => {
+      tok.value = "";
+      localStorage.removeItem("token");
+      user.value = null;
+    };
+    
+    onMounted(async () => {
+      if(isAuth.value) { await getUser(); await getOrders(); }
+    });
+    
+    return { tok, usr, pwd, err, msg, busy, user, ords, ord, isAuth, doLogin, getOrders, saveOrden, logout };
+  }
+}).mount("#app");
+</script>
+</body>
+</html>

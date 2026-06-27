@@ -1,3 +1,4 @@
+"""FastAPI application"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -14,40 +15,30 @@ app = FastAPI(
     description="SaaS Platform for Restaurant Operations"
 )
 
-# CORS Middleware
-origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+# CORS Configuration - PERMITE TODOS LOS ORÍGENES PARA DESARROLLO
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],  # En desarrollo: permitir todos
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Incluir routers
 app.include_router(auth_router)
 app.include_router(ordenes_router)
 
 @app.get("/")
-async def root():
-    return {
-        "message": "FoodOps API",
-        "version": "0.1.0",
-        "status": "running"
-    }
+def root():
+    return {"message": "FoodOps API", "version": "0.1.0", "status": "running"}
 
 @app.get("/health")
-async def health_check():
-    return {
-        "status": "healthy",
-        "environment": os.getenv("APP_ENV", "development")
-    }
+def health_check():
+    return {"status": "healthy", "environment": os.getenv("APP_ENV", "development")}
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "foodops.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True
-    )
+@app.post("/test-orden")
+def test_orden(data: dict):
+    return {"success": True, "message": "Test works", "data": data}
+
+@app.post("/api/test-simple")
+def test_simple(data: dict):
+    return {"success": True, "data": data}

@@ -1,16 +1,13 @@
-"""Autenticación JWT"""
-
+"""Authentication"""
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import HTTPException
 from pydantic import BaseModel
 from foodops.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 class TokenData(BaseModel):
     user_id: int
@@ -34,7 +31,6 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
@@ -46,13 +42,13 @@ def verify_token(token: str) -> TokenData:
         username: str = payload.get("username")
         punto_id: int = payload.get("punto_id")
         rol: str = payload.get("rol")
-        
         if user_id is None:
             raise HTTPException(status_code=401, detail="Invalid token")
-        
         return TokenData(user_id=user_id, username=username, punto_id=punto_id, rol=rol)
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> TokenData:
+def get_current_user(token: str = None) -> TokenData:
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
     return verify_token(token)

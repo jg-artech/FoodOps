@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>FoodOps</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <style>
+    body { font-family: Arial; background: #f5f5f5; margin: 0; }
+    .navbar { background: #333; color: white; padding: 1rem; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+    .login-form { background: white; max-width: 400px; margin: 5rem auto; padding: 2rem; border-radius: 8px; }
+    input, select { width: 100%; padding: 0.5rem; margin: 0.5rem 0; }
+    button { width: 100%; padding: 0.75rem; background: #007bff; color: white; border: none; cursor: pointer; }
+    .error { color: red; }
+    .success { color: green; }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const { createApp, ref, computed, onMounted } = Vue;
+createApp({
+  template: `<div><div v-if="isAuth" class="navbar"><h1>FoodOps</h1><button @click="logout">Logout</button></div><div v-if="!isAuth" class="login-form"><h1>Login</h1><input v-model="user" placeholder="admin"/><input v-model="pass" type="password" placeholder="admin123"/><button @click="login">Ingresar</button><p v-if="err" class="error">{{err}}</p></div><div v-else class="container"><h1>Bienvenido {{userData?.nombre_completo}}</h1><button @click="currentPage='ordenes'">Nueva Orden</button><div v-if="currentPage==='ordenes'"><h2>Crear Orden</h2><input v-model="orden.cliente_nombre" placeholder="Nombre cliente"/><input v-model="orden.cliente_telefono" placeholder="Teléfono"/><select v-model="orden.metodo_pago"><option value="efectivo">Efectivo</option><option value="tarjeta">Tarjeta</option></select><button @click="createOrden">Crear</button><p v-if="msg" class="success">{{msg}}</p></div></div></div>`,
+  setup() {
+    const tok = ref(localStorage.getItem('token') || '');
+    const user = ref('admin');
+    const pass = ref('admin123');
+    const err = ref('');
+    const msg = ref('');
+    const userData = ref(null);
+    const currentPage = ref('dashboard');
+    const orden = ref({ cliente_nombre: '', cliente_telefono: '', metodo_pago: 'efectivo', es_domicilio: false });
+    const isAuth = computed(() => !!tok.value);
+    
+    const login = async () => {
+      try {
+        const r = await fetch('http://localhost:8001/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: user.value, password: pass.value })
+        });
+        const d = await r.json();
+        tok.value = d.access_token;
+        localStorage.setItem('token', d.access_token);
+        await getUser();
+      } catch(e) {
+        err.value = e.message;
+      }
+    };
+    
+    const getUser = async () => {
+      const r = await fetch('http://localhost:8001/api/auth/me', {
+        headers: { 'Authorization': `Bearer ${tok.value}` }
+      });
+      userData.value = await r.json();
+    };
+    
+    const createOrden = async () => {
+      const r = await fetch('http://localhost:8001/api/ordenes/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tok.value}` },
+        body: JSON.stringify(orden.value)
+      });
+      if (r.ok) {
+        msg.value = '¡Orden creada!';
+        orden.value = { cliente_nombre: '', cliente_telefono: '', metodo_pago: 'efectivo', es_domicilio: false };
+      }
+    };
+    
+    const logout = () => {
+      tok.value = '';
+      localStorage.removeItem('token');
+      userData.value = null;
+    };
+    
+    onMounted(async () => {
+      if (isAuth.value) await getUser();
+    });
+    
+    return { tok, user, pass, err, msg, userData, currentPage, orden, isAuth, login, createOrden, logout };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
