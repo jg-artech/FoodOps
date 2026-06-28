@@ -1,10 +1,15 @@
 <template>
   <div class="max-w-4xl mx-auto px-4 py-8">
+    <div v-if="isOffline" class="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 text-sm text-yellow-700">
+      Sin conexión — mostrando órdenes guardadas localmente.
+    </div>
+
     <div class="flex items-center justify-between mb-6">
       <h1 class="text-2xl font-bold text-gray-800">Órdenes</h1>
       <button
         @click="showForm = !showForm"
-        class="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-4 py-2 rounded-lg text-sm transition"
+        :disabled="isOffline"
+        class="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-4 py-2 rounded-lg text-sm transition disabled:opacity-50"
       >
         {{ showForm ? 'Ver listado' : '+ Nueva Orden' }}
       </button>
@@ -28,10 +33,13 @@ import OrdenForm from '@/components/OrdenForm.vue'
 import OrdenList from '@/components/OrdenList.vue'
 import api from '@/services/api'
 
+const CACHE_KEY = 'foodops_ordenes'
+
 const auth = useAuthStore()
 const ordenes = ref([])
 const loading = ref(false)
 const showForm = ref(false)
+const isOffline = ref(!navigator.onLine)
 
 async function fetchOrdenes() {
   const puntoId = auth.puntoId
@@ -40,8 +48,10 @@ async function fetchOrdenes() {
   try {
     const { data } = await api.get(`/api/ordenes/${puntoId}`)
     ordenes.value = data
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data))
   } catch {
-    // sin conexión
+    const cached = localStorage.getItem(CACHE_KEY)
+    if (cached) ordenes.value = JSON.parse(cached)
   } finally {
     loading.value = false
   }
@@ -49,8 +59,13 @@ async function fetchOrdenes() {
 
 function onOrdenCreada(nuevaOrden) {
   ordenes.value.unshift(nuevaOrden)
+  localStorage.setItem(CACHE_KEY, JSON.stringify(ordenes.value))
   showForm.value = false
 }
 
-onMounted(fetchOrdenes)
+onMounted(() => {
+  window.addEventListener('online', () => { isOffline.value = false; fetchOrdenes() })
+  window.addEventListener('offline', () => { isOffline.value = true })
+  fetchOrdenes()
+})
 </script>

@@ -36,6 +36,7 @@ class OrdenItemCreate(BaseModel):
 class OrdenCreate(BaseModel):
     cliente_nombre: Optional[str] = None
     cliente_telefono: Optional[str] = None
+    cliente_direccion: Optional[str] = None
     metodo_pago: str
     items: List[OrdenItemCreate]
     es_domicilio: bool = False
