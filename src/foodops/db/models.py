@@ -1,6 +1,6 @@
 """Modelos SQLAlchemy para BD"""
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Enum, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Enum, Text, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -101,7 +101,7 @@ class Orden(Base):
 
 class OrdenItem(Base):
     __tablename__ = "orden_items"
-    
+
     id = Column(Integer, primary_key=True)
     orden_id = Column(Integer, ForeignKey("ordenes.id"), nullable=False)
     producto = Column(String(255), nullable=False)
@@ -109,5 +109,40 @@ class OrdenItem(Base):
     precio_unitario = Column(Float, nullable=False)
     subtotal = Column(Float, nullable=False)
     especiales = Column(Text)
-    
+
     orden = relationship("Orden", back_populates="items")
+
+
+class TipoVenta(str, enum.Enum):
+    INDIVIDUAL = "individual"
+    COMBO = "combo"
+    INICIATIVA = "iniciativa"
+
+
+class TransaccionVenta(Base):
+    __tablename__ = "transacciones_venta"
+
+    id = Column(Integer, primary_key=True)
+    punto_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=False)
+    orden_id = Column(Integer, ForeignKey("ordenes.id"), nullable=True)
+
+    tipo_venta = Column(Enum(TipoVenta), nullable=False, default=TipoVenta.INDIVIDUAL)
+    nombre_iniciativa = Column(String(100), nullable=True)
+
+    cliente_nombre = Column(String(100), nullable=True)
+    cliente_telefono = Column(String(20), nullable=True)
+    cliente_direccion = Column(Text, nullable=True)
+    tipo_cliente = Column(String(20), nullable=False, default="para_llevar")
+
+    precio_venta = Column(Float, nullable=False)
+    costo_total = Column(Float, nullable=False, default=0)
+    margen_bruto = Column(Float, nullable=False, default=0)
+    margen_pct = Column(Float, nullable=False, default=0)
+
+    metodo_pago = Column(String(50), nullable=True)
+    items_json = Column(JSON, nullable=False, default=list)
+    requerimientos_especiales = Column(Text, nullable=True)
+    estado = Column(String(50), nullable=False, default="completada")
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -146,10 +146,11 @@
 
     <!-- ───── PASO 4: Método de pago ───── -->
     <div v-if="step === 4">
-      <h2 class="text-xl font-bold text-gray-800 mb-6">¿Cómo paga?</h2>
+      <h2 class="text-xl font-bold text-gray-800 mb-2">¿Cómo paga?</h2>
+      <p class="text-2xl font-black text-orange-500 mb-5">Total: Q{{ totalPrecio.toFixed(2) }}</p>
 
-      <div class="space-y-3 mb-6">
-        <button v-for="m in metodos" :key="m.value" @click="form.metodo_pago = m.value"
+      <div class="space-y-3 mb-4">
+        <button v-for="m in metodos" :key="m.value" @click="form.metodo_pago = m.value; form.dinero_recibido = ''"
           class="w-full p-5 border-2 rounded-2xl flex items-center gap-4 transition-all"
           :class="form.metodo_pago === m.value ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:border-gray-300'">
           <span class="text-3xl">{{ m.emoji }}</span>
@@ -157,13 +158,48 @@
         </button>
       </div>
 
+      <!-- Panel de efectivo -->
+      <transition name="slide">
+        <div v-if="form.metodo_pago === 'efectivo'" class="bg-green-50 border border-green-200 rounded-2xl p-5 mb-4">
+          <label class="block text-sm font-bold text-green-800 mb-3">💵 Efectivo recibido</label>
+          <div class="flex items-center gap-3 mb-4">
+            <span class="text-lg font-bold text-gray-500">Q</span>
+            <input v-model.number="form.dinero_recibido" type="number" min="0" step="1"
+              placeholder="0.00" autofocus
+              class="flex-1 text-3xl font-black text-center border-2 border-green-300 rounded-xl px-4 py-3 focus:outline-none focus:border-green-500 bg-white" />
+          </div>
+
+          <!-- Botones rápidos de billetes -->
+          <div class="grid grid-cols-4 gap-2 mb-4">
+            <button v-for="b in billetes" :key="b" @click="form.dinero_recibido = b"
+              class="py-2 rounded-xl text-sm font-bold border-2 transition-all"
+              :class="form.dinero_recibido === b ? 'border-green-500 bg-green-500 text-white' : 'border-gray-200 bg-white text-gray-700 hover:border-green-400'">
+              Q{{ b }}
+            </button>
+          </div>
+
+          <!-- Vuelto -->
+          <div v-if="form.dinero_recibido > 0" class="rounded-xl p-4 text-center"
+            :class="vuelto >= 0 ? 'bg-white border border-green-300' : 'bg-red-50 border border-red-300'">
+            <p class="text-xs font-bold uppercase tracking-wide mb-1"
+              :class="vuelto >= 0 ? 'text-green-700' : 'text-red-600'">
+              {{ vuelto >= 0 ? 'Vuelto' : '⚠️ Falta' }}
+            </p>
+            <p class="text-4xl font-black"
+              :class="vuelto >= 0 ? 'text-green-600' : 'text-red-500'">
+              Q{{ Math.abs(vuelto).toFixed(2) }}
+            </p>
+          </div>
+        </div>
+      </transition>
+
       <p v-if="errorMsg" class="text-red-500 text-sm mb-3">{{ errorMsg }}</p>
 
       <div class="flex gap-3">
         <button @click="step = 3" class="flex-1 border border-gray-300 text-gray-600 font-semibold py-3 rounded-xl hover:bg-gray-50">
           ← Volver
         </button>
-        <button @click="confirmarOrden" :disabled="!form.metodo_pago || loading"
+        <button @click="confirmarOrden" :disabled="!canConfirmar || loading"
           class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition disabled:opacity-40">
           {{ loading ? 'Creando...' : `✓ CONFIRMAR — Q${totalPrecio.toFixed(2)}` }}
         </button>
@@ -174,8 +210,27 @@
     <div v-if="step === 5" class="text-center py-8">
       <div class="text-6xl mb-4">✅</div>
       <h2 class="text-2xl font-bold text-gray-800 mb-1">¡Orden creada!</h2>
-      <p class="text-3xl font-bold text-orange-500 mb-1">{{ ordenCreada?.numero_orden }}</p>
-      <p class="text-gray-500 mb-8">Total: <strong>Q{{ totalPrecio.toFixed(2) }}</strong></p>
+      <p class="text-3xl font-bold text-orange-500 mb-3">{{ ordenCreada?.numero_orden }}</p>
+
+      <!-- Resumen de efectivo si aplica -->
+      <div v-if="ordenCreada?.metodo_pago === 'efectivo' && ordenCreada?.dinero_recibido"
+        class="bg-green-50 border border-green-200 rounded-2xl p-4 mb-5 text-left">
+        <div class="flex justify-between text-sm text-gray-600 mb-1">
+          <span>Total orden:</span>
+          <span class="font-bold">Q{{ Number(ordenCreada.total).toFixed(2) }}</span>
+        </div>
+        <div class="flex justify-between text-sm text-gray-600 mb-2">
+          <span>Efectivo recibido:</span>
+          <span class="font-bold">Q{{ Number(ordenCreada.dinero_recibido).toFixed(2) }}</span>
+        </div>
+        <div class="flex justify-between text-base font-black border-t border-green-200 pt-2">
+          <span class="text-green-700">Vuelto:</span>
+          <span class="text-green-600 text-xl">Q{{ Number(ordenCreada.vuelto || 0).toFixed(2) }}</span>
+        </div>
+      </div>
+
+      <p v-else class="text-gray-500 mb-5">Total: <strong>Q{{ totalPrecio.toFixed(2) }}</strong></p>
+
       <div class="flex flex-col gap-3">
         <button @click="resetOrden" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-4 rounded-xl text-lg">
           🍗 Nueva Orden
@@ -204,7 +259,7 @@
 import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/index'
-import { getMenu, CATEGORIAS } from '@/data/menu.js'
+import { getMenu, getCategorias } from '@/data/menu.js'
 import PiezaModal from '@/components/PiezaModal.vue'
 import api from '@/services/api'
 
@@ -217,7 +272,7 @@ const errorMsg = ref('')
 const ordenCreada = ref(null)
 
 const menuItems = getMenu()
-const categorias = CATEGORIAS
+const categorias = getCategorias()
 
 const form = reactive({
   tipo: '',
@@ -226,6 +281,22 @@ const form = reactive({
   cliente_direccion: '',
   metodo_pago: '',
   notas_especiales: '',
+  dinero_recibido: '',
+})
+
+const billetes = [20, 50, 100, 200]
+
+const vuelto = computed(() => {
+  if (!form.dinero_recibido) return 0
+  return Number(form.dinero_recibido) - totalPrecio.value
+})
+
+const canConfirmar = computed(() => {
+  if (!form.metodo_pago) return false
+  if (form.metodo_pago === 'efectivo' && form.dinero_recibido) {
+    return Number(form.dinero_recibido) >= totalPrecio.value
+  }
+  return true
 })
 
 // Carrito: cada entrada es un item con cantidad
@@ -305,10 +376,31 @@ function goBack() {
   else router.push('/pos')
 }
 
+function getCostosConfig() {
+  try {
+    return {
+      simples: JSON.parse(localStorage.getItem('foodops_costos') || '{}'),
+      combos:  JSON.parse(localStorage.getItem('foodops_combo_costos') || '{}'),
+    }
+  } catch { return { simples: {}, combos: {} } }
+}
+
+function getCostoItem(cartItem, config) {
+  // Si tiene desglose de combo, usar ese total
+  const combo = config.combos[cartItem.id]
+  if (combo?.total) return combo.total
+  // Si no, usar costo simple por unidad
+  return config.simples[cartItem.id] || 0
+}
+
 async function confirmarOrden() {
   errorMsg.value = ''
   loading.value = true
   try {
+    const dineroRecibido = form.metodo_pago === 'efectivo' && form.dinero_recibido
+      ? Number(form.dinero_recibido) : null
+    const vueltoCalc = dineroRecibido !== null ? dineroRecibido - totalPrecio.value : null
+
     const payload = {
       cliente_nombre:    form.tipo === 'domicilio' ? form.cliente_nombre : null,
       cliente_telefono:  form.tipo === 'domicilio' ? form.cliente_telefono : null,
@@ -316,6 +408,8 @@ async function confirmarOrden() {
       metodo_pago:       form.metodo_pago,
       es_domicilio:      form.tipo === 'domicilio',
       notas_especiales:  form.notas_especiales || null,
+      dinero_recibido:   dineroRecibido,
+      vuelto:            vueltoCalc,
       items: cart.value.map(i => ({
         producto:        i.nombre,
         cantidad:        i.cantidad,
@@ -325,6 +419,42 @@ async function confirmarOrden() {
     }
     const { data } = await api.post('/api/ordenes/', payload)
     ordenCreada.value = data
+
+    // Registrar transacción financiera con costo correcto por tipo
+    const config = getCostosConfig()
+    const itemsTransaccion = cart.value.map(i => {
+      const costoU = getCostoItem(i, config)
+      return {
+        nombre:          i.nombre,
+        cantidad:        i.cantidad,
+        unidad:          'pieza',
+        precio_unitario: i.precio,
+        costo_unitario:  costoU,
+        subtotal:        i.cantidad * i.precio,
+        tipo_pieza:      null,
+      }
+    })
+    const costoTotal  = itemsTransaccion.reduce((s, i) => s + i.costo_unitario * i.cantidad, 0)
+    const margenBruto = totalPrecio.value - costoTotal
+    const margenPct   = totalPrecio.value > 0 ? Math.round((margenBruto / totalPrecio.value) * 100) : 0
+
+    api.post('/api/ordenes/transacciones/', {
+      punto_id:                  auth.puntoId || 2,
+      orden_id:                  data.id,
+      tipo_venta:                'individual',
+      cliente_nombre:            form.tipo === 'domicilio' ? form.cliente_nombre : null,
+      cliente_telefono:          form.tipo === 'domicilio' ? form.cliente_telefono : null,
+      cliente_direccion:         form.tipo === 'domicilio' ? form.cliente_direccion : null,
+      tipo_cliente:              form.tipo === 'domicilio' ? 'domicilio' : 'para_llevar',
+      precio_venta:              totalPrecio.value,
+      costo_total:               costoTotal,
+      margen_bruto:              margenBruto,
+      margen_pct:                margenPct,
+      metodo_pago:               form.metodo_pago,
+      items:                     itemsTransaccion,
+      requerimientos_especiales: form.notas_especiales || null,
+    }).catch(() => {})
+
     step.value = 5
   } catch (e) {
     errorMsg.value = e.response?.data?.detail || 'Error al crear la orden'
@@ -336,7 +466,7 @@ async function confirmarOrden() {
 function resetOrden() {
   step.value = 1
   cart.value = []
-  Object.assign(form, { tipo: '', cliente_nombre: '', cliente_telefono: '', cliente_direccion: '', metodo_pago: '', notas_especiales: '' })
+  Object.assign(form, { tipo: '', cliente_nombre: '', cliente_telefono: '', cliente_direccion: '', metodo_pago: '', notas_especiales: '', dinero_recibido: '' })
   ordenCreada.value = null
   errorMsg.value = ''
 }

@@ -61,3 +61,19 @@ export function getMenu() {
 export function saveMenu(items) {
   localStorage.setItem('foodops_menu', JSON.stringify(items))
 }
+
+const EMOJI_DEFAULT = {
+  pollos: '🍗', costillas: '🥓', combos: '🥘', guarniciones: '🥔', extras: '➕',
+}
+
+export function getCategorias() {
+  try {
+    const saved = localStorage.getItem('foodops_categorias')
+    if (saved) return JSON.parse(saved)
+  } catch {}
+  return CATEGORIAS.map(c => ({ ...c, emoji: EMOJI_DEFAULT[c.key] || '📦' }))
+}
+
+export function saveCategorias(cats) {
+  localStorage.setItem('foodops_categorias', JSON.stringify(cats))
+}

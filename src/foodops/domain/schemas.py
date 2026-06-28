@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Any
 
 class UsuarioCreate(BaseModel):
     username: str
@@ -41,6 +41,8 @@ class OrdenCreate(BaseModel):
     items: List[OrdenItemCreate]
     es_domicilio: bool = False
     notas_especiales: Optional[str] = None
+    dinero_recibido: Optional[float] = None
+    vuelto: Optional[float] = None
 
 class OrdenResponse(BaseModel):
     id: int
@@ -48,6 +50,34 @@ class OrdenResponse(BaseModel):
     estado: str
     total: float
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
+
+
+class ItemTransaccion(BaseModel):
+    nombre: str
+    cantidad: float
+    unidad: str = "pieza"
+    precio_unitario: float
+    costo_unitario: float = 0
+    subtotal: float
+    tipo_pieza: Optional[str] = None
+
+
+class CrearTransaccionRequest(BaseModel):
+    punto_id: int
+    orden_id: Optional[int] = None
+    tipo_venta: str = "individual"
+    nombre_iniciativa: Optional[str] = None
+    cliente_nombre: Optional[str] = None
+    cliente_telefono: Optional[str] = None
+    cliente_direccion: Optional[str] = None
+    tipo_cliente: str = "para_llevar"
+    precio_venta: float
+    costo_total: float = 0
+    margen_bruto: float = 0
+    margen_pct: float = 0
+    metodo_pago: str
+    items: List[ItemTransaccion]
+    requerimientos_especiales: Optional[str] = None
