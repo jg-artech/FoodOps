@@ -8,6 +8,12 @@ import OrdersListView from '@/views/OrdersListView.vue'
 import DayClosureView from '@/views/DayClosureView.vue'
 import ConfigView from '@/views/ConfigView.vue'
 import KitchenView from '@/views/KitchenView.vue'
+import CajaTiendaView from '@/views/CajaTiendaView.vue'
+import InventarioView from '@/views/InventarioView.vue'
+import GastosView from '@/views/GastosView.vue'
+import DesperdiciosView from '@/views/DesperdiciosView.vue'
+import FondosRepartidorView from '@/views/FondosRepartidorView.vue'
+import CierreCajaView from '@/views/CierreCajaView.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -20,6 +26,12 @@ const routes = [
   { path: '/pos/cierre', component: DayClosureView, meta: { requiresAuth: true } },
   { path: '/pos/config', component: ConfigView, meta: { requiresAuth: true } },
   { path: '/cocina', component: KitchenView, meta: { requiresAuth: true, noNav: true } },
+  { path: '/caja', component: CajaTiendaView, meta: { requiresAuth: true } },
+  { path: '/caja/inventario/:momento', component: InventarioView, meta: { requiresAuth: true } },
+  { path: '/caja/gastos', component: GastosView, meta: { requiresAuth: true } },
+  { path: '/caja/desperdicios', component: DesperdiciosView, meta: { requiresAuth: true } },
+  { path: '/caja/fondos-repartidor', component: FondosRepartidorView, meta: { requiresAuth: true } },
+  { path: '/caja/cierre', component: CierreCajaView, meta: { requiresAuth: true } },
 ]
 
 const router = createRouter({

@@ -2,15 +2,19 @@
 import logging
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
 from foodops.core.auth import (
+    TokenData,
     create_access_token,
     get_current_user,
     oauth2_scheme,
+    requiere_rol,
     verify_password,
     verify_token,
 )
@@ -119,3 +123,31 @@ def get_me(current_user=Depends(get_current_user)):
         "punto_id": current_user.punto_id,
         "rol": current_user.rol,
     }
+
+
+@router.get("/usuarios")
+def listar_usuarios(
+    rol: Optional[str] = Query(default=None),
+    current_user: TokenData = Depends(requiere_rol("resp_tienda", "gerente_general", "admin")),
+):
+    """Lista usuarios activos del punto de venta del usuario autenticado (ej. repartidores)."""
+    session = Session()
+    try:
+        stmt = select(Usuario).where(
+            Usuario.punto_id == current_user.punto_id,
+            Usuario.activo.is_(True),
+        )
+        if rol:
+            stmt = stmt.where(Usuario.rol == rol)
+        usuarios = session.execute(stmt).scalars().all()
+        return [
+            {
+                "id": u.id,
+                "username": u.username,
+                "nombre_completo": u.nombre_completo,
+                "rol": u.rol.value,
+            }
+            for u in usuarios
+        ]
+    finally:
+        session.close()

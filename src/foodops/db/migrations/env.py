@@ -19,6 +19,7 @@ print(f"DEBUG: sys.path = {sys.path[0]}")
 # Importar Base
 try:
     from foodops.db.models import Base
+    import foodops.db.models_caja  # noqa: F401 - registra tablas del Módulo D en Base.metadata
     print("✅ Base importado exitosamente")
 except ImportError as e:
     print(f"❌ Error importando Base: {e}")
