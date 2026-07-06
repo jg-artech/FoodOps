@@ -42,11 +42,9 @@ const showForm = ref(false)
 const isOffline = ref(!navigator.onLine)
 
 async function fetchOrdenes() {
-  const puntoId = auth.puntoId
-  if (!puntoId) return
   loading.value = true
   try {
-    const { data } = await api.get(`/api/ordenes/${puntoId}`)
+    const { data } = await api.get('/api/ordenes/')
     ordenes.value = data
     localStorage.setItem(CACHE_KEY, JSON.stringify(data))
   } catch {

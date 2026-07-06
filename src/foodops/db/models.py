@@ -1,6 +1,6 @@
 """Modelos SQLAlchemy para BD"""
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Enum, Text, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Enum, Text, JSON, BigInteger, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -11,6 +11,7 @@ Base = declarative_base()
 # Enums
 class UserRol(str, enum.Enum):
     ADMIN = "admin"
+    GERENTE_GENERAL = "gerente_general"
     GERENTE_PUNTO = "gerente_punto"
     TOMADOR_ORDEN = "tomador_orden"
     COCINERO = "cocinero"
@@ -72,8 +73,10 @@ class Usuario(Base):
     nombre_completo = Column(String(255))
     rol = Column(Enum(UserRol), default=UserRol.TOMADOR_ORDEN)
     activo = Column(Boolean, default=True)
+    intentos_fallidos = Column(Integer, default=0, nullable=False)
+    bloqueado_hasta = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+
     empresa = relationship("Empresa", back_populates="usuarios")
     punto = relationship("PuntoVenta", back_populates="usuarios")
 
@@ -93,9 +96,10 @@ class Orden(Base):
     vuelto = Column(Float)
     es_domicilio = Column(Boolean, default=False)
     notas_especiales = Column(Text)
+    tomada_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     actualizado_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     punto = relationship("PuntoVenta", back_populates="ordenes")
     items = relationship("OrdenItem", back_populates="orden")
 
@@ -146,3 +150,17 @@ class TransaccionVenta(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id = Column(BigInteger, primary_key=True)
+    usuario_id = Column(Integer, nullable=True)
+    punto_id = Column(Integer, nullable=True)
+    accion = Column(String(60), nullable=False)
+    entidad = Column(String(40), nullable=False)
+    entidad_id = Column(String(40), nullable=True)
+    detalle = Column(JSON, nullable=True)
+    ip = Column(String(45), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

@@ -85,10 +85,8 @@ function actualizarHora() {
 }
 
 async function fetchOrdenes() {
-  const puntoId = auth.puntoId
-  if (!puntoId) return
   try {
-    const { data } = await api.get(`/api/ordenes/${puntoId}`)
+    const { data } = await api.get('/api/ordenes/')
     ordenes.value = data
   } catch {}
 }

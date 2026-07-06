@@ -78,10 +78,8 @@ function actualizarHora() {
 }
 
 async function fetchOrdenes() {
-  const puntoId = auth.puntoId
-  if (!puntoId) return
   try {
-    const { data } = await api.get(`/api/ordenes/${puntoId}`)
+    const { data } = await api.get('/api/ordenes/')
     const activas = data.filter(o => ['pendiente', 'preparando'].includes(o.estado))
     // Ordenar: más antigua primero (FIFO)
     activas.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))

@@ -1,60 +1,121 @@
 """APIs de autenticación"""
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
-import os
-from datetime import timedelta
 
-from fastapi.security import OAuth2PasswordBearer
-from foodops.domain.schemas import LoginRequest, TokenResponse
-from foodops.db.models import Usuario
-from foodops.core.auth import create_access_token, verify_password, verify_token
+from foodops.core.audit import registrar_auditoria
+from foodops.core.auth import (
+    create_access_token,
+    get_current_user,
+    oauth2_scheme,
+    verify_password,
+    verify_token,
+)
 from foodops.core.config import settings
+from foodops.db.models import Usuario
+from foodops.domain.schemas import LoginRequest, TokenResponse
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# Usar sync en lugar de async
 engine = create_engine(settings.DATABASE_SYNC_URL)
 Session = sessionmaker(bind=engine)
 
+_MAX_INTENTOS = 5
+_BLOQUEO_MINUTOS = 15
+
+
 @router.post("/login", response_model=TokenResponse)
-def login(request: LoginRequest):
-    """Login de usuario"""
+def login(request: Request, body: LoginRequest):
+    """Login de usuario con rate limiting por intentos fallidos."""
     session = Session()
+    _GENERIC_ERROR = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Credenciales inválidas",
+    )
+    client_ip = request.client.host if request.client else None
     try:
-        stmt = select(Usuario).where(Usuario.username == request.username)
+        stmt = select(Usuario).where(Usuario.username == body.username)
         usuario = session.execute(stmt).scalars().first()
-        
-        if not usuario or not verify_password(request.password, usuario.password_hash):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Usuario o contraseña incorrectos"
+
+        if not usuario:
+            registrar_auditoria(
+                session,
+                accion="LOGIN_FALLIDO",
+                entidad="usuario",
+                detalle={"username": body.username, "motivo": "usuario_no_existe"},
+                ip=client_ip,
             )
-        
-        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+            session.commit()
+            raise _GENERIC_ERROR
+
+        # Check block
+        if usuario.bloqueado_hasta and usuario.bloqueado_hasta > datetime.utcnow():
+            registrar_auditoria(
+                session,
+                accion="LOGIN_BLOQUEADO",
+                entidad="usuario",
+                entidad_id=usuario.id,
+                usuario_id=usuario.id,
+                punto_id=usuario.punto_id,
+                detalle={"username": body.username},
+                ip=client_ip,
+            )
+            session.commit()
+            raise _GENERIC_ERROR
+
+        if not verify_password(body.password, usuario.password_hash):
+            usuario.intentos_fallidos = (usuario.intentos_fallidos or 0) + 1
+            if usuario.intentos_fallidos >= _MAX_INTENTOS:
+                usuario.bloqueado_hasta = datetime.utcnow() + timedelta(minutes=_BLOQUEO_MINUTOS)
+            registrar_auditoria(
+                session,
+                accion="LOGIN_FALLIDO",
+                entidad="usuario",
+                entidad_id=usuario.id,
+                usuario_id=usuario.id,
+                punto_id=usuario.punto_id,
+                detalle={"intentos": usuario.intentos_fallidos},
+                ip=client_ip,
+            )
+            session.commit()
+            raise _GENERIC_ERROR
+
+        # Successful login: reset counters
+        usuario.intentos_fallidos = 0
+        usuario.bloqueado_hasta = None
+
         access_token = create_access_token(
             data={
                 "user_id": usuario.id,
                 "username": usuario.username,
                 "punto_id": usuario.punto_id or 0,
-                "rol": usuario.rol.value
+                "rol": usuario.rol.value,
             },
-            expires_delta=access_token_expires
+            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
         )
-        
+        session.commit()
         return {"access_token": access_token, "token_type": "bearer"}
+    except HTTPException:
+        raise
+    except Exception:
+        session.rollback()
+        logger.exception("Error inesperado en login")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
     finally:
         session.close()
 
+
 @router.get("/me")
-def get_me(token: str = Depends(oauth2_scheme)):
-    """Obtiene usuario actual desde el JWT"""
-    user = verify_token(token)
+def get_me(current_user=Depends(get_current_user)):
+    """Obtiene usuario actual desde el JWT."""
     return {
-        "user_id": user.user_id,
-        "username": user.username,
-        "punto_id": user.punto_id,
-        "rol": user.rol
+        "user_id": current_user.user_id,
+        "username": current_user.username,
+        "punto_id": current_user.punto_id,
+        "rol": current_user.rol,
     }
