@@ -47,7 +47,9 @@ class StockActualResponse(BaseModel):
     item_id: int
     nombre: str
     unidad: str
+    tipo: str
     cantidad_apertura: Decimal
+    cantidad_recibida: Decimal
     consumo_teorico: Decimal
     stock_estimado: Decimal
     cantidad_cierre: Optional[Decimal] = None
