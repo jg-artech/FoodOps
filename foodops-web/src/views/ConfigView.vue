@@ -375,7 +375,9 @@
                 class="grid grid-cols-12 gap-2 px-3 py-2 items-center border-t border-gray-100 text-sm">
                 <span class="col-span-6 text-gray-700 truncate">{{ c.nombre_item }}</span>
                 <span class="col-span-2 text-center font-semibold text-gray-600">{{ c.cantidad }}</span>
-                <span class="col-span-3 text-center">{{ c.elegible ? '☑' : '☐' }}</span>
+                <span class="col-span-3 text-center text-xs truncate" :title="c.nombre_grupo || ''">
+                  {{ c.elegible ? (c.nombre_grupo ? `☑ ${c.nombre_grupo}` : '☑') : '☐' }}
+                </span>
                 <button @click="nuevoModal.componentes.splice(i, 1)"
                   class="col-span-1 text-red-400 hover:text-red-600 text-lg text-center leading-none">✕</button>
               </div>
@@ -428,13 +430,32 @@
           </div>
           <label class="flex items-center gap-2 text-sm text-gray-700">
             <input type="checkbox" v-model="componenteModal.elegible" class="w-4 h-4 accent-orange-500" />
-            ¿Elegible? (el cliente puede elegir cuál de varios)
+            ¿Es elegible? (el cliente elige entre varias opciones)
           </label>
+
+          <div v-if="componenteModal.elegible" class="border border-blue-100 bg-blue-50 rounded-xl p-3 space-y-2">
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Grupo</label>
+              <select v-model="componenteModal.grupoSeleccionado"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400">
+                <option v-for="g in gruposExistentes" :key="g.grupo_elegible" :value="g.grupo_elegible">
+                  Grupo {{ g.grupo_elegible }} — {{ g.nombre_grupo }}
+                </option>
+                <option value="nuevo">+ Nuevo grupo</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Nombre del grupo</label>
+              <input v-model="componenteModal.nombre_grupo" :disabled="componenteModal.grupoSeleccionado !== 'nuevo'"
+                placeholder="Ej: Pieza de Pollo" autocomplete="off"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:bg-gray-100 disabled:text-gray-500" />
+            </div>
+          </div>
         </div>
         <div class="flex gap-3 mt-5">
           <button @click="componenteModal.visible = false"
             class="flex-1 border border-gray-300 text-gray-600 font-semibold py-2.5 rounded-xl hover:bg-gray-50">Cancelar</button>
-          <button @click="confirmarComponente" :disabled="!componenteModal.item_inventario_id || !componenteModal.cantidad"
+          <button @click="confirmarComponente" :disabled="!puedeConfirmarComponente"
             class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl disabled:opacity-40">Agregar</button>
         </div>
       </div>
@@ -493,7 +514,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { getMenu, saveMenu, MENU_ITEMS, getCategorias, saveCategorias, CATEGORIAS } from '@/data/menu.js'
 import api from '@/services/api'
 
@@ -707,6 +728,8 @@ async function abrirComponentes(item) {
         nombre_item: c.item_nombre,
         cantidad: c.cantidad,
         elegible: c.elegible,
+        grupo_elegible: c.grupo_elegible ?? null,
+        nombre_grupo: c.nombre_grupo ?? null,
       }))
     }
   } catch {
@@ -715,10 +738,34 @@ async function abrirComponentes(item) {
 }
 
 // ─── SUB-MODAL: agregar componente ───
-const componenteModal = reactive({ visible: false, item_inventario_id: null, cantidad: 1, unidad: '', elegible: false })
+const componenteModal = reactive({
+  visible: false, item_inventario_id: null, cantidad: 1, unidad: '', elegible: false,
+  grupoSeleccionado: 'nuevo', nombre_grupo: '',
+})
+
+// Grupos ya usados por otros componentes de este mismo producto (para reutilizar
+// el mismo grupo_elegible en vez de crear uno nuevo cada vez).
+const gruposExistentes = computed(() => {
+  const vistos = new Map()
+  for (const c of nuevoModal.componentes) {
+    if (c.elegible && c.grupo_elegible != null && !vistos.has(c.grupo_elegible)) {
+      vistos.set(c.grupo_elegible, { grupo_elegible: c.grupo_elegible, nombre_grupo: c.nombre_grupo })
+    }
+  }
+  return [...vistos.values()].sort((a, b) => a.grupo_elegible - b.grupo_elegible)
+})
+
+const puedeConfirmarComponente = computed(() => {
+  if (!componenteModal.item_inventario_id || !componenteModal.cantidad) return false
+  if (componenteModal.elegible && componenteModal.grupoSeleccionado === 'nuevo' && !componenteModal.nombre_grupo.trim()) return false
+  return true
+})
 
 function abrirNuevoComponente() {
-  Object.assign(componenteModal, { visible: true, item_inventario_id: null, cantidad: 1, unidad: '', elegible: false })
+  Object.assign(componenteModal, {
+    visible: true, item_inventario_id: null, cantidad: 1, unidad: '', elegible: false,
+    grupoSeleccionado: 'nuevo', nombre_grupo: '',
+  })
 }
 
 function onComponenteItemChange() {
@@ -726,14 +773,46 @@ function onComponenteItemChange() {
   componenteModal.unidad = it?.unidad || ''
 }
 
+watch(() => componenteModal.elegible, (elegible) => {
+  if (!elegible) return
+  const primero = gruposExistentes.value[0]
+  componenteModal.grupoSeleccionado = primero ? primero.grupo_elegible : 'nuevo'
+  componenteModal.nombre_grupo = primero ? primero.nombre_grupo : ''
+})
+
+watch(() => componenteModal.grupoSeleccionado, (grupoSeleccionado) => {
+  if (grupoSeleccionado === 'nuevo') {
+    componenteModal.nombre_grupo = ''
+    return
+  }
+  const grupo = gruposExistentes.value.find((g) => g.grupo_elegible === grupoSeleccionado)
+  componenteModal.nombre_grupo = grupo?.nombre_grupo || ''
+})
+
 function confirmarComponente() {
   const it = itemsInventario.value.find((i) => i.id === componenteModal.item_inventario_id)
   if (!it || !componenteModal.cantidad) return
+
+  let grupo_elegible = null
+  let nombre_grupo = null
+  if (componenteModal.elegible) {
+    if (componenteModal.grupoSeleccionado === 'nuevo') {
+      const maxGrupo = gruposExistentes.value.reduce((m, g) => Math.max(m, g.grupo_elegible), 0)
+      grupo_elegible = maxGrupo + 1
+      nombre_grupo = componenteModal.nombre_grupo.trim()
+    } else {
+      grupo_elegible = componenteModal.grupoSeleccionado
+      nombre_grupo = componenteModal.nombre_grupo
+    }
+  }
+
   nuevoModal.componentes.push({
     item_inventario_id: it.id,
     nombre_item: it.nombre,
     cantidad: Number(componenteModal.cantidad),
     elegible: componenteModal.elegible,
+    grupo_elegible,
+    nombre_grupo,
   })
   componenteModal.visible = false
 }
@@ -755,6 +834,8 @@ async function confirmarNuevo() {
         item_inventario_id: c.item_inventario_id,
         cantidad: c.cantidad,
         elegible: c.elegible,
+        grupo_elegible: c.grupo_elegible ?? null,
+        nombre_grupo: c.nombre_grupo ?? null,
       })),
     }
 

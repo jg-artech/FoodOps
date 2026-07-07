@@ -3,14 +3,16 @@ export const MENU_ITEMS = [
   { id: 1,  nombre: 'Pollo Entero',         precio: 75,  categoria: 'pollos',      unidad: 'pieza',   emoji: '🍗' },
   { id: 2,  nombre: '½ Pollo',              precio: 45,  categoria: 'pollos',      unidad: 'pieza',   emoji: '🍗' },
   {
+    // La elección de pieza (Pechuga+Ala / Cuadril+Pierna) ya no pasa por
+    // PiezaModal/requiereSeleccion: vive como grupo_elegible formal en la
+    // receta (producto_componentes) y se resuelve junto con Guarnición en
+    // SelectorComponentesModal - ver agruparElegibles en NewOrderView.vue.
     id: 3,
     nombre: '¼ Pollo',
     precio: 25,
     categoria: 'pollos',
     unidad: 'pieza',
     emoji: '🍗',
-    requiereSeleccion: true,
-    opciones: ['Pechuga', 'Cuadril', 'Pierna', 'Ala'],
   },
 
   // COSTILLAS

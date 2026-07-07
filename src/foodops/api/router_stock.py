@@ -452,6 +452,8 @@ def listar_productos_menu(current_user: TokenData = Depends(get_current_user)):
                     "tipo": item.tipo,
                     "cantidad": float(c.cantidad),
                     "elegible": c.elegible,
+                    "grupo_elegible": c.grupo_elegible,
+                    "nombre_grupo": c.nombre_grupo,
                 }
             )
         return [

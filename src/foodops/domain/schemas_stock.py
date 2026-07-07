@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 Monto = Annotated[Decimal, Field(ge=Decimal("0"), max_digits=10, decimal_places=2)]
 Cantidad = Annotated[float, Field(gt=0, le=9999)]
@@ -138,6 +138,20 @@ class ComponenteProductoCreate(BaseModel):
     item_inventario_id: int
     cantidad: Annotated[Decimal, Field(gt=Decimal("0"), max_digits=8, decimal_places=2)]
     elegible: bool = False
+    # Solo tienen sentido si elegible=True: agrupan varios componentes del mismo
+    # producto en un "elige 1" independiente (p.ej. grupo 1 "Pieza de Pollo",
+    # grupo 2 "Guarnición"). Se normalizan a None si elegible=False.
+    grupo_elegible: Optional[Annotated[int, Field(ge=1, le=50)]] = None
+    nombre_grupo: Optional[Annotated[str, Field(max_length=100)]] = None
+
+    @model_validator(mode="after")
+    def _normalizar_grupo(self) -> "ComponenteProductoCreate":
+        if not self.elegible:
+            self.grupo_elegible = None
+            self.nombre_grupo = None
+        elif self.grupo_elegible is not None and not (self.nombre_grupo or "").strip():
+            raise ValueError("nombre_grupo es requerido cuando se asigna grupo_elegible")
+        return self
 
 
 class ProductoConComponentesCreate(BaseModel):
@@ -166,6 +180,8 @@ class ComponenteProductoResponse(BaseModel):
     item_nombre: str
     cantidad: Decimal
     elegible: bool
+    grupo_elegible: Optional[int] = None
+    nombre_grupo: Optional[str] = None
 
 
 class ProductoConComponentesResponse(BaseModel):

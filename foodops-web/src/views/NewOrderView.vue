@@ -355,22 +355,34 @@ const selectorModal = reactive({
   fijos: [],
 })
 
-// Agrupa los componentes elegible=true de una receta por items_inventario.tipo:
-// un tipo con 2+ items se interpreta como "elige 1" (radio, p.ej. guarniciones);
-// un tipo con un único item suelto se interpreta como opcional (checkbox, p.ej.
-// "¿incluir bolsa?"). No existe un campo explícito de agrupación en el modelo de
-// datos, así que este es un heurístico: si un producto tuviera dos grupos de
-// radio distintos del MISMO tipo de item, se fusionarían en un solo grupo.
+// Agrupa los componentes elegible=true de una receta usando el grupo_elegible
+// formal (grupo_elegible + nombre_grupo, asignado desde ConfigView) cuando
+// existe: cada número de grupo es un "elige 1" independiente (p.ej. Pieza de
+// Pollo vs Guarnición). Para componentes elegibles legacy sin grupo asignado
+// (datos previos a esta feature) se mantiene el heurístico anterior por
+// items_inventario.tipo como fallback, así no dejan de mostrarse.
 function agruparElegibles(componentes) {
+  const elegibles = componentes.filter((c) => c.elegible)
+  const conGrupo = elegibles.filter((c) => c.grupo_elegible != null)
+  const sinGrupo = elegibles.filter((c) => c.grupo_elegible == null)
+
+  const porGrupo = {}
+  for (const c of conGrupo) {
+    if (!porGrupo[c.grupo_elegible]) porGrupo[c.grupo_elegible] = { label: c.nombre_grupo || `Grupo ${c.grupo_elegible}`, items: [] }
+    porGrupo[c.grupo_elegible].items.push(c)
+  }
+
   const porTipo = {}
-  for (const c of componentes.filter((c) => c.elegible)) {
+  for (const c of sinGrupo) {
     if (!porTipo[c.tipo]) porTipo[c.tipo] = []
     porTipo[c.tipo].push(c)
   }
-  return Object.entries(porTipo).map(([tipo, items]) => ({
+  const gruposHeuristicos = Object.entries(porTipo).map(([tipo, items]) => ({
     label: tipo === 'insumo' ? 'Guarnición' : 'Opcionales',
     items,
   }))
+
+  return [...Object.values(porGrupo), ...gruposHeuristicos]
 }
 
 const metodos = [
@@ -388,6 +400,21 @@ const canStep1 = computed(() => {
 const totalItems = computed(() => cart.value.reduce((acc, i) => acc + i.cantidad, 0))
 const totalPrecio = computed(() => cart.value.reduce((acc, i) => acc + i.cantidad * i.precio, 0))
 
+// Orden de despliegue: el pollo siempre primero (por nombre del item o de su
+// grupo, p.ej. "Pollo Entero" o cualquier pieza del grupo "Pieza de Pollo"),
+// luego el resto de la proteína, luego guarnición, luego el resto de
+// ingredientes (condimentos/fijos).
+function esPollo(c) {
+  return `${c.nombre} ${c.nombre_grupo || ''}`.toLowerCase().includes('pollo')
+}
+function ordenComponente(c) {
+  if (esPollo(c)) return 0
+  if (c.tipo === 'vendible') return 1
+  if (c.nombre_grupo && c.nombre_grupo !== 'Guarnición') return 2
+  if (c.nombre_grupo === 'Guarnición') return 3
+  return 4
+}
+
 const componentesPreview = computed(() => {
   const acumulado = {}
   for (const entry of cart.value) {
@@ -395,11 +422,16 @@ const componentesPreview = computed(() => {
     const fijos = receta.filter((c) => !c.elegible)
     const elegidos = entry.componentesSeleccionados || []
     for (const c of [...fijos, ...elegidos]) {
-      if (!acumulado[c.item_id]) acumulado[c.item_id] = { item_id: c.item_id, nombre: c.nombre, unidad: c.unidad, cantidad: 0 }
+      if (!acumulado[c.item_id]) {
+        acumulado[c.item_id] = {
+          item_id: c.item_id, nombre: c.nombre, unidad: c.unidad, cantidad: 0,
+          tipo: c.tipo, nombre_grupo: c.nombre_grupo,
+        }
+      }
       acumulado[c.item_id].cantidad += c.cantidad * entry.cantidad
     }
   }
-  return Object.values(acumulado)
+  return Object.values(acumulado).sort((a, b) => ordenComponente(a) - ordenComponente(b))
 })
 
 function itemsPorCategoria(cat) {
@@ -410,8 +442,21 @@ function getTotalQty(id) {
   return cart.value.filter(i => i.id === id).reduce((acc, i) => acc + i.cantidad, 0)
 }
 
+// PiezaModal (requiereSeleccion/opciones en menu.js) es el mecanismo legacy
+// de "elegir pieza": es solo una etiqueta de texto, no está ligado a
+// items_inventario ni afecta transaccion_componentes. Si la receta del
+// producto ya tiene un grupo_elegible formal (p.ej. "Pieza de Pollo"), ese
+// grupo cubre la misma decisión pero correctamente ligado a stock, así que
+// se ignora requiereSeleccion para no preguntar dos veces por lo mismo.
+// Esto también autocorrige menús viejos guardados en localStorage que aún
+// traigan requiereSeleccion=true de antes de que existiera el grupo formal.
+function tieneGrupoElegibleFormal(itemId) {
+  const receta = recetas.value[itemId] || []
+  return receta.some((c) => c.elegible && c.grupo_elegible != null)
+}
+
 function agregarItem(item) {
-  if (item.requiereSeleccion) {
+  if (item.requiereSeleccion && !tieneGrupoElegibleFormal(item.id)) {
     modalPieza.item = item
     modalPieza.opciones = item.opciones
     modalPieza.precio = item.precio

@@ -39,6 +39,10 @@ class ProductoComponente(Base):
     item_inventario_id = Column(Integer, ForeignKey("items_inventario.id"), nullable=False)
     cantidad = Column(Numeric(8, 2), nullable=False)
     elegible = Column(Boolean, default=False)
+    # NULL = componente fijo. Un entero agrupa componentes del mismo producto que
+    # forman un "elige 1" independiente (p.ej. Pieza vs Guarnición en ¼ Pollo).
+    grupo_elegible = Column(Integer, nullable=True)
+    nombre_grupo = Column(String(100), nullable=True)
 
 
 class TransaccionComponente(Base):

@@ -46,6 +46,8 @@ def _producto_dict(session, producto: ProductoMenu) -> dict:
                 "item_nombre": item.nombre,
                 "cantidad": float(c.cantidad),
                 "elegible": c.elegible,
+                "grupo_elegible": c.grupo_elegible,
+                "nombre_grupo": c.nombre_grupo,
             }
             for c, item in filas
         ],
@@ -67,6 +69,25 @@ def _validar_items_inventario(session, componentes) -> None:
             status_code=400,
             detail=f"item_inventario_id inválido(s): {sorted(faltantes)}",
         )
+
+
+def _validar_grupos(componentes) -> None:
+    """Un mismo número de grupo_elegible dentro del producto debe tener siempre
+    el mismo nombre_grupo (evita, p.ej., dos componentes en grupo=1 con labels
+    distintos por error de UI)."""
+    nombres_por_grupo: dict = {}
+    for c in componentes:
+        if c.grupo_elegible is None:
+            continue
+        previo = nombres_por_grupo.setdefault(c.grupo_elegible, c.nombre_grupo)
+        if previo != c.nombre_grupo:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Grupo {c.grupo_elegible} tiene nombres inconsistentes: "
+                    f"'{previo}' vs '{c.nombre_grupo}'"
+                ),
+            )
 
 
 def _validar_nombre_unico(session, nombre: str, excluir_id: int = None) -> None:
@@ -98,6 +119,7 @@ def crear_producto_config(
     try:
         _validar_nombre_unico(session, body.nombre)
         _validar_items_inventario(session, body.componentes)
+        _validar_grupos(body.componentes)
 
         tipo = "combo" if body.categoria == "combos" else "individual"
         producto = ProductoMenu(
@@ -119,6 +141,8 @@ def crear_producto_config(
                     item_inventario_id=c.item_inventario_id,
                     cantidad=c.cantidad,
                     elegible=c.elegible,
+                    grupo_elegible=c.grupo_elegible,
+                    nombre_grupo=c.nombre_grupo,
                 )
             )
 
@@ -156,6 +180,7 @@ def actualizar_producto_config(
 
         _validar_nombre_unico(session, body.nombre, excluir_id=producto_id)
         _validar_items_inventario(session, body.componentes)
+        _validar_grupos(body.componentes)
 
         producto.nombre = body.nombre.strip()
         producto.precio = body.precio
@@ -176,6 +201,8 @@ def actualizar_producto_config(
                     item_inventario_id=c.item_inventario_id,
                     cantidad=c.cantidad,
                     elegible=c.elegible,
+                    grupo_elegible=c.grupo_elegible,
+                    nombre_grupo=c.nombre_grupo,
                 )
             )
 
