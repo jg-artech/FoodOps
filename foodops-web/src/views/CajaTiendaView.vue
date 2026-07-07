@@ -63,6 +63,10 @@
           <div class="text-3xl mb-1">📝</div>
           <div class="font-bold text-gray-700 text-sm">Inventario</div>
         </RouterLink>
+        <RouterLink to="/caja/stock" class="bg-white border border-gray-200 rounded-2xl p-5 text-center shadow-sm hover:border-orange-300">
+          <div class="text-3xl mb-1">📊</div>
+          <div class="font-bold text-gray-700 text-sm">Ver Stock Hoy</div>
+        </RouterLink>
         <RouterLink to="/caja/cierre" class="col-span-2 bg-green-600 hover:bg-green-700 text-white rounded-2xl p-5 text-center shadow-sm font-bold text-lg">
           ✅ CERRAR CAJA
         </RouterLink>

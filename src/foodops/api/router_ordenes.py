@@ -19,6 +19,7 @@ from foodops.db.models import (
     TransaccionVenta,
     TipoVenta,
 )
+from foodops.db.models_stock import ProductoComponente, ProductoMenu, TransaccionComponente
 from foodops.domain.schemas import CrearTransaccionRequest, OrdenCreate
 
 logger = logging.getLogger(__name__)
@@ -255,6 +256,51 @@ def reporte_cierre(
         session.close()
 
 
+def _registrar_componentes_transaccion(session, transaccion_id: int, items) -> None:
+    """Para cada item vendido con producto_menu_id, expande su receta
+    (producto_componentes) y registra el consumo exacto por componente.
+
+    Los componentes marcados elegible=True (guarnición a elegir dentro de un combo)
+    se omiten: el POS actual no captura qué guarnición específica eligió el cliente
+    (los combos se venden como una sola línea de carrito), así que no hay dato real
+    que registrar para esos slots todavía.
+    """
+    producto_ids = [item.producto_menu_id for item in items if item.producto_menu_id]
+    if not producto_ids:
+        return
+
+    productos = {
+        p.id: p
+        for p in session.execute(
+            select(ProductoMenu).where(ProductoMenu.id.in_(producto_ids))
+        ).scalars().all()
+    }
+    componentes_por_producto: dict = {}
+    for c in session.execute(
+        select(ProductoComponente).where(ProductoComponente.producto_menu_id.in_(producto_ids))
+    ).scalars().all():
+        componentes_por_producto.setdefault(c.producto_menu_id, []).append(c)
+
+    for item in items:
+        if not item.producto_menu_id:
+            continue
+        producto = productos.get(item.producto_menu_id)
+        if not producto:
+            continue
+        tipo_origen = "combo" if producto.tipo == "combo" else "producto_individual"
+        for componente in componentes_por_producto.get(item.producto_menu_id, []):
+            if componente.elegible:
+                continue
+            session.add(
+                TransaccionComponente(
+                    transaccion_id=transaccion_id,
+                    item_inventario_id=componente.item_inventario_id,
+                    cantidad=float(componente.cantidad) * item.cantidad,
+                    tipo_origen=tipo_origen,
+                )
+            )
+
+
 @router.post("/transacciones/")
 def crear_transaccion(
     req: CrearTransaccionRequest,
@@ -282,6 +328,19 @@ def crear_transaccion(
             estado="completada",
         )
         session.add(t)
+        session.flush()
+
+        _registrar_componentes_transaccion(session, t.id, req.items)
+
+        registrar_auditoria(
+            session,
+            accion="CREAR_TRANSACCION",
+            entidad="transacciones_venta",
+            entidad_id=t.id,
+            usuario_id=current_user.user_id,
+            punto_id=current_user.punto_id,
+            detalle={"metodo_pago": req.metodo_pago, "total": req.precio_venta},
+        )
         session.commit()
         return {"id_transaccion": t.id, "status": "creada"}
     except HTTPException:

@@ -34,6 +34,7 @@ from foodops.domain.schemas_caja import (
     ItemInventarioUpdate,
     TransaccionPedidoCreate,
 )
+from foodops.utils.timeutils import local_day_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +49,7 @@ _UMBRAL_DESCUADRE = Decimal("10.00")
 
 
 def _day_bounds(fecha: date) -> tuple[datetime, datetime]:
-    start = datetime(fecha.year, fecha.month, fecha.day)
-    return start, start + timedelta(days=1)
+    return local_day_bounds(fecha)
 
 
 def _get_caja_abierta(session, punto_id: int) -> CajaDiaria:

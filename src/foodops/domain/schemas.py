@@ -81,6 +81,7 @@ class ItemTransaccion(BaseModel):
     costo_unitario: Annotated[float, Field(ge=0)] = 0
     subtotal: Annotated[float, Field(ge=0)]
     tipo_pieza: Optional[Annotated[str, Field(max_length=50)]] = None
+    producto_menu_id: Optional[int] = None
 
 
 class CrearTransaccionRequest(BaseModel):

@@ -125,6 +125,16 @@
         </div>
       </div>
 
+      <!-- Preview de componentes a descontar de inventario -->
+      <div v-if="componentesPreview.length" class="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-4">
+        <p class="font-semibold text-blue-800 text-sm mb-2">📦 Al confirmar, se registrarán estos componentes:</p>
+        <ul class="text-sm text-blue-700 space-y-0.5">
+          <li v-for="c in componentesPreview" :key="c.item_id">
+            {{ c.cantidad }} {{ c.unidad || '' }} {{ c.nombre }}
+          </li>
+        </ul>
+      </div>
+
       <!-- Requerimientos especiales -->
       <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4">
         <label class="block font-semibold text-amber-800 mb-2">⚠️ Requerimientos especiales</label>
@@ -256,7 +266,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/index'
 import { getMenu, getCategorias } from '@/data/menu.js'
@@ -265,6 +275,22 @@ import api from '@/services/api'
 
 const router = useRouter()
 const auth = useAuthStore()
+
+// Recetas (producto_menu_id -> componentes de items_inventario) para previsualizar
+// qué se descontará de inventario. Si el producto no tiene receta cargada en el
+// backend (p.ej. items de menú editados a mano vía Config), simplemente no aparece.
+const recetas = ref({})
+async function cargarRecetas() {
+  try {
+    const { data } = await api.get('/api/productos-menu')
+    const map = {}
+    for (const p of data) map[p.id] = p.componentes
+    recetas.value = map
+  } catch {
+    recetas.value = {}
+  }
+}
+onMounted(cargarRecetas)
 
 const step = ref(1)
 const loading = ref(false)
@@ -323,6 +349,19 @@ const canStep1 = computed(() => {
 
 const totalItems = computed(() => cart.value.reduce((acc, i) => acc + i.cantidad, 0))
 const totalPrecio = computed(() => cart.value.reduce((acc, i) => acc + i.cantidad * i.precio, 0))
+
+const componentesPreview = computed(() => {
+  const acumulado = {}
+  for (const entry of cart.value) {
+    const componentes = recetas.value[entry.id] || []
+    for (const c of componentes) {
+      if (c.elegible) continue
+      if (!acumulado[c.item_id]) acumulado[c.item_id] = { item_id: c.item_id, nombre: c.nombre, unidad: c.unidad, cantidad: 0 }
+      acumulado[c.item_id].cantidad += c.cantidad * entry.cantidad
+    }
+  }
+  return Object.values(acumulado)
+})
 
 function itemsPorCategoria(cat) {
   return menuItems.filter(i => i.categoria === cat)
@@ -425,13 +464,14 @@ async function confirmarOrden() {
     const itemsTransaccion = cart.value.map(i => {
       const costoU = getCostoItem(i, config)
       return {
-        nombre:          i.nombre,
-        cantidad:        i.cantidad,
-        unidad:          'pieza',
-        precio_unitario: i.precio,
-        costo_unitario:  costoU,
-        subtotal:        i.cantidad * i.precio,
-        tipo_pieza:      null,
+        nombre:            i.nombre,
+        cantidad:          i.cantidad,
+        unidad:            'pieza',
+        precio_unitario:   i.precio,
+        costo_unitario:    costoU,
+        subtotal:          i.cantidad * i.precio,
+        tipo_pieza:        null,
+        producto_menu_id:  i.id,
       }
     })
     const costoTotal  = itemsTransaccion.reduce((s, i) => s + i.costo_unitario * i.cantidad, 0)

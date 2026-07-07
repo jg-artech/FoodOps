@@ -10,7 +10,9 @@ from fastapi.responses import JSONResponse
 
 from foodops.api.router_auth import router as auth_router
 from foodops.api.router_caja import router as caja_router
+from foodops.api.router_gerencia import router as gerencia_router
 from foodops.api.router_ordenes import router as ordenes_router
+from foodops.api.router_stock import router as stock_router
 
 load_dotenv()
 
@@ -37,6 +39,8 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(ordenes_router)
 app.include_router(caja_router)
+app.include_router(stock_router)
+app.include_router(gerencia_router)
 
 
 @app.exception_handler(Exception)
