@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from foodops.api.router_abastecimiento import router as abastecimiento_router
 from foodops.api.router_auth import router as auth_router
 from foodops.api.router_caja import router as caja_router
 from foodops.api.router_config import router as config_router
@@ -43,6 +44,7 @@ app.include_router(caja_router)
 app.include_router(stock_router)
 app.include_router(gerencia_router)
 app.include_router(config_router)
+app.include_router(abastecimiento_router)
 
 
 @app.exception_handler(Exception)

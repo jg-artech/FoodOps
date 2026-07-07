@@ -20,10 +20,16 @@
     <div v-else class="space-y-3">
       <div v-for="p in pedidos" :key="p.id" class="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
         <div class="flex items-center justify-between mb-2">
-          <p class="font-bold text-gray-800">Pedido #{{ p.id }}</p>
+          <p class="font-bold text-gray-800">
+            Pedido #{{ p.id }}
+            <span v-if="p.responsable_tipo" class="ml-1 text-xs font-semibold text-blue-500">· {{ p.responsable_tipo }}</span>
+          </p>
           <span class="text-xs font-bold uppercase px-2 py-1 rounded-full" :class="badgeClase(p.estado)">{{ p.estado }}</span>
         </div>
-        <p class="text-xs text-gray-400 mb-3">{{ fecha(p.created_at) }} · {{ p.tipo }}</p>
+        <p class="text-xs text-gray-400 mb-3">
+          {{ fecha(p.created_at) }} · {{ p.tipo }}
+          <span v-if="p.fecha_envio">· enviado {{ p.fecha_envio }}</span>
+        </p>
 
         <div class="space-y-1 mb-3">
           <div v-for="it in p.items" :key="it.id" class="flex justify-between text-sm">

@@ -7,11 +7,13 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
     Numeric,
     String,
+    UniqueConstraint,
 )
 
 from foodops.db.models import Base
@@ -70,6 +72,13 @@ class PedidoReabastecimiento(Base):
     confirmado_por = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     confirmado_at = Column(DateTime, nullable=True)
+    # Módulo D (abastecimiento inteligente): NULL = pedido "clásico" iniciado por
+    # la tienda (flujo previo, sin cambios). Si viene de una sugerencia generada
+    # por un responsable central (POLLO/VEGETAL/DESECHABLE_SALSA), se etiqueta
+    # aquí en vez de crear una tabla pedidos_abastecimiento paralela - es el
+    # mismo pedido, solo con más contexto de origen.
+    responsable_tipo = Column(String(30), nullable=True)
+    fecha_envio = Column(Date, nullable=True)
 
 
 class PedidoReabastecimientoItem(Base):
@@ -83,3 +92,29 @@ class PedidoReabastecimientoItem(Base):
     precio_unitario = Column(Numeric(10, 2), nullable=True)
     costo_total = Column(Numeric(10, 2), nullable=True)
     razon_solicitud = Column(String(100), nullable=True)
+
+
+class ReglaReabastecimiento(Base):
+    """Min/máx de stock por item (+ opcionalmente por punto_venta) usado por el
+    algoritmo de sugerencias de abastecimiento. punto_venta_id NULL = regla
+    global de respaldo, usada si no hay una regla específica de esa tienda."""
+
+    __tablename__ = "reglas_reabastecimiento"
+
+    id = Column(Integer, primary_key=True)
+    item_inventario_id = Column(Integer, ForeignKey("items_inventario.id"), nullable=False)
+    punto_venta_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=True)
+    stock_minimo = Column(Numeric(10, 2), nullable=False)
+    stock_maximo = Column(Numeric(10, 2), nullable=False)
+    consumo_diario_base = Column(Numeric(10, 2), nullable=True)
+    factor_sabado = Column(Numeric(3, 2), nullable=False, default=1.30)
+    factor_domingo = Column(Numeric(3, 2), nullable=False, default=1.50)
+    cantidad_fija_diaria = Column(Numeric(10, 2), nullable=True)
+    activo = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("item_inventario_id", "punto_venta_id", name="uq_reglas_reab_item_punto"),
+        CheckConstraint("stock_maximo >= stock_minimo", name="ck_reglas_reab_max_ge_min"),
+    )

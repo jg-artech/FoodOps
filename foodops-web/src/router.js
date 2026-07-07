@@ -16,6 +16,7 @@ import FondosRepartidorView from '@/views/FondosRepartidorView.vue'
 import CierreCajaView from '@/views/CierreCajaView.vue'
 import StockView from '@/views/StockView.vue'
 import PedidosReabastecimientoView from '@/views/PedidosReabastecimientoView.vue'
+import AbastecimientoView from '@/views/AbastecimientoView.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -36,6 +37,7 @@ const routes = [
   { path: '/caja/cierre', component: CierreCajaView, meta: { requiresAuth: true } },
   { path: '/caja/stock', component: StockView, meta: { requiresAuth: true } },
   { path: '/caja/pedidos-reabastecimiento', component: PedidosReabastecimientoView, meta: { requiresAuth: true } },
+  { path: '/caja/abastecimiento', component: AbastecimientoView, meta: { requiresAuth: true } },
 ]
 
 const router = createRouter({

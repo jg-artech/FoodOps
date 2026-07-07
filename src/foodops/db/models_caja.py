@@ -85,6 +85,9 @@ class ItemInventario(Base):
     orden_conteo = Column(Integer, nullable=False)
     activo = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Módulo D: responsable de abastecimiento (POLLO/VEGETAL/DESECHABLE_SALSA),
+    # ver migración 007_modulo_d_abastecimiento
+    responsable_abastecimiento = Column(String(30), nullable=True)
 
 
 class InventarioDiario(Base):

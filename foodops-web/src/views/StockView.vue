@@ -80,6 +80,10 @@
         </button>
       </div>
 
+      <RouterLink v-if="puedeAbastecimiento" to="/caja/abastecimiento" class="block text-center bg-orange-50 border border-orange-200 text-orange-700 font-semibold py-3 rounded-xl hover:bg-orange-100">
+        🚚 Abastecimiento por responsable
+      </RouterLink>
+
       <RouterLink to="/caja/pedidos-reabastecimiento" class="block text-center border border-gray-300 text-gray-600 font-semibold py-3 rounded-xl hover:bg-gray-50">
         📋 Ver pedidos de reabastecimiento
       </RouterLink>
@@ -94,6 +98,7 @@ import api from '@/services/api'
 
 const auth = useAuthStore()
 const esGerencia = computed(() => ['gerente_general', 'admin'].includes(auth.user?.rol))
+const puedeAbastecimiento = computed(() => ['gerente_central', 'gerente_general', 'admin'].includes(auth.user?.rol))
 
 const tiendas = ref([])
 const puntoSeleccionado = ref(auth.puntoId)

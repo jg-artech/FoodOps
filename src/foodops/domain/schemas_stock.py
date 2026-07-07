@@ -194,3 +194,92 @@ class ProductoConComponentesResponse(BaseModel):
     descripcion: Optional[str] = None
     activo: bool
     componentes: List[ComponenteProductoResponse] = []
+
+
+# ---------------------------------------------------------------------------
+# Módulo D: abastecimiento inteligente (reglas min/máx + sugerencias por día)
+# ---------------------------------------------------------------------------
+
+
+class ResponsableAbastecimiento(str, enum.Enum):
+    POLLO = "POLLO"
+    VEGETAL = "VEGETAL"
+    DESECHABLE_SALSA = "DESECHABLE_SALSA"
+
+
+FactorDia = Annotated[Decimal, Field(gt=Decimal("0"), le=Decimal("9.99"), max_digits=3, decimal_places=2)]
+StockRegla = Annotated[Decimal, Field(ge=Decimal("0"), max_digits=10, decimal_places=2)]
+
+
+class ReglaReabastecimientoCreate(BaseModel):
+    item_inventario_id: int
+    punto_venta_id: Optional[int] = None
+    stock_minimo: StockRegla
+    stock_maximo: StockRegla
+    consumo_diario_base: Optional[StockRegla] = None
+    factor_sabado: FactorDia = Decimal("1.30")
+    factor_domingo: FactorDia = Decimal("1.50")
+    cantidad_fija_diaria: Optional[StockRegla] = None
+    activo: bool = True
+
+    @model_validator(mode="after")
+    def _validar_rango(self) -> "ReglaReabastecimientoCreate":
+        if self.stock_maximo < self.stock_minimo:
+            raise ValueError("stock_maximo no puede ser menor que stock_minimo")
+        return self
+
+
+class ReglaReabastecimientoUpdate(BaseModel):
+    stock_minimo: Optional[StockRegla] = None
+    stock_maximo: Optional[StockRegla] = None
+    consumo_diario_base: Optional[StockRegla] = None
+    factor_sabado: Optional[FactorDia] = None
+    factor_domingo: Optional[FactorDia] = None
+    cantidad_fija_diaria: Optional[StockRegla] = None
+    activo: Optional[bool] = None
+
+
+class ReglaReabastecimientoResponse(BaseModel):
+    id: int
+    item_inventario_id: int
+    item_nombre: str
+    punto_venta_id: Optional[int] = None
+    stock_minimo: Decimal
+    stock_maximo: Decimal
+    consumo_diario_base: Optional[Decimal] = None
+    factor_sabado: Decimal
+    factor_domingo: Decimal
+    cantidad_fija_diaria: Optional[Decimal] = None
+    activo: bool
+
+
+class SugerenciaItemResponse(BaseModel):
+    item_id: int
+    item_nombre: str
+    stock_actual: float
+    consumo_ayer: float
+    cantidad_sugerida: float
+    urgencia: str
+
+
+class SugerenciaPuntoResponse(BaseModel):
+    punto_id: int
+    punto_nombre: str
+    items: List[SugerenciaItemResponse]
+
+
+class SugerenciasAbastecimientoResponse(BaseModel):
+    fecha: str
+    factor_dia: float
+    puntos: List[SugerenciaPuntoResponse]
+
+
+class PedidoAbastecimientoItemIn(BaseModel):
+    punto_venta_id: int
+    item_id: int
+    cantidad_final: Annotated[float, Field(gt=0, le=99999)]
+
+
+class PedidoAbastecimientoCrearRequest(BaseModel):
+    responsable_tipo: ResponsableAbastecimiento
+    items: Annotated[List[PedidoAbastecimientoItemIn], Field(min_length=1, max_length=200)]

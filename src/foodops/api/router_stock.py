@@ -257,6 +257,8 @@ def _pedido_dict(session, pedido: PedidoReabastecimiento) -> dict:
         "confirmado_por": pedido.confirmado_por,
         "created_at": str(pedido.created_at),
         "confirmado_at": str(pedido.confirmado_at) if pedido.confirmado_at else None,
+        "responsable_tipo": pedido.responsable_tipo,
+        "fecha_envio": str(pedido.fecha_envio) if pedido.fecha_envio else None,
         "items": [
             {
                 "id": pi.id,

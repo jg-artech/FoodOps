@@ -12,6 +12,7 @@ Base = declarative_base()
 class UserRol(str, enum.Enum):
     ADMIN = "admin"
     GERENTE_GENERAL = "gerente_general"
+    GERENTE_CENTRAL = "gerente_central"
     GERENTE_PUNTO = "gerente_punto"
     RESP_TIENDA = "resp_tienda"
     REPARTIDOR = "repartidor"
