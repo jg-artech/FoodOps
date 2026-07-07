@@ -127,3 +127,54 @@ class DashboardGerenteResponse(BaseModel):
     recomendaciones: List[RecomendacionReabastecimientoResponse]
     pedidos_pendientes: List[PedidoReabastecimientoResponse]
     resumen: dict
+
+
+# ---------------------------------------------------------------------------
+# CRUD de productos_menu + su receta, desde ConfigView
+# ---------------------------------------------------------------------------
+
+
+class ComponenteProductoCreate(BaseModel):
+    item_inventario_id: int
+    cantidad: Annotated[Decimal, Field(gt=Decimal("0"), max_digits=8, decimal_places=2)]
+    elegible: bool = False
+
+
+class ProductoConComponentesCreate(BaseModel):
+    nombre: Annotated[str, Field(max_length=100)]
+    precio: Monto
+    # Categoría real del catálogo (pollos|costillas|combos|guarniciones|extras|...) -
+    # el usuario puede crear categorías nuevas libremente desde ConfigView, así que
+    # esto es un string libre (con límite de longitud), no el enum productos|combos
+    # de dos valores que traía la spec original.
+    categoria: Annotated[str, Field(max_length=30)]
+    unidad: Annotated[str, Field(max_length=20)]
+    descripcion: Optional[Annotated[str, Field(max_length=200)]] = None
+    # La spec pedía min_items=1, pero ya existen productos reales sin receta
+    # mapeable (Papa al vapor, Ensalada Rusa, Porción Extra - ver
+    # project-stock-reabastecimiento) porque no hay item_inventario equivalente.
+    # Exigir mínimo 1 aquí bloquearía crear ese mismo tipo de producto vía UI.
+    componentes: Annotated[List[ComponenteProductoCreate], Field(max_length=20)] = []
+
+
+class ProductoConComponentesUpdate(ProductoConComponentesCreate):
+    pass
+
+
+class ComponenteProductoResponse(BaseModel):
+    item_id: int
+    item_nombre: str
+    cantidad: Decimal
+    elegible: bool
+
+
+class ProductoConComponentesResponse(BaseModel):
+    id: int
+    nombre: str
+    precio: Decimal
+    categoria: str
+    tipo: str
+    unidad: str
+    descripcion: Optional[str] = None
+    activo: bool
+    componentes: List[ComponenteProductoResponse] = []

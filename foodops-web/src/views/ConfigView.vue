@@ -35,6 +35,10 @@
                 <input v-model.number="item.precio" type="number" min="0"
                   class="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400 font-bold text-orange-600" />
               </div>
+              <button @click="abrirComponentes(item)" title="Componentes de inventario"
+                class="text-xs bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 px-2 py-1.5 rounded-lg font-semibold transition shrink-0">
+                🧩
+              </button>
               <button @click="eliminarItem(item.id)" class="text-red-400 hover:text-red-600 text-lg px-1 transition">✕</button>
             </div>
             <div v-if="item.categoria === 'combos'" class="mt-2 ml-9">
@@ -300,47 +304,138 @@
       </button>
     </div>
 
-    <!-- MODAL: nuevo producto -->
+    <!-- MODAL: nuevo producto / componentes -->
     <div v-if="nuevoModal.visible" class="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-4">
-      <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
-        <h3 class="font-bold text-gray-800 mb-4">Nuevo producto — {{ catLabel(nuevoModal.categoria) }}</h3>
-        <div class="space-y-3">
-          <div class="flex gap-2">
-            <div>
-              <label class="text-xs text-gray-500 block mb-1">Emoji</label>
-              <input v-model="nuevoModal.emoji" maxlength="4"
-                class="w-14 border border-gray-200 rounded-lg px-2 py-2 text-xl text-center focus:outline-none focus:ring-1 focus:ring-orange-400" />
+      <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+        <div class="px-6 py-4 border-b border-gray-200 shrink-0">
+          <h3 class="font-bold text-gray-800">
+            {{ nuevoModal.modo === 'editar' ? 'Editar' : 'Nuevo' }} producto — {{ catLabel(nuevoModal.categoria) }}
+          </h3>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-6 py-4">
+          <div class="space-y-3">
+            <div class="flex gap-2">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">Emoji</label>
+                <input v-model="nuevoModal.emoji" maxlength="4"
+                  class="w-14 border border-gray-200 rounded-lg px-2 py-2 text-xl text-center focus:outline-none focus:ring-1 focus:ring-orange-400" />
+              </div>
+              <div class="flex-1">
+                <label class="text-xs text-gray-500 block mb-1">Nombre *</label>
+                <input v-model="nuevoModal.nombre" autocomplete="off"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
+              </div>
             </div>
-            <div class="flex-1">
-              <label class="text-xs text-gray-500 block mb-1">Nombre *</label>
-              <input v-model="nuevoModal.nombre" autocomplete="off"
+            <div class="flex gap-2">
+              <div class="flex-1">
+                <label class="text-xs text-gray-500 block mb-1">Precio (Q) *</label>
+                <input v-model.number="nuevoModal.precio" type="number" min="0"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
+              </div>
+              <div class="flex-1">
+                <label class="text-xs text-gray-500 block mb-1">Unidad</label>
+                <input v-model="nuevoModal.unidad" placeholder="pieza / lb / porción"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
+              </div>
+            </div>
+            <div v-if="nuevoModal.categoria === 'combos'">
+              <label class="text-xs text-gray-500 block mb-1">Contenido del combo</label>
+              <input v-model="nuevoModal.contenido"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Descripción (opcional)</label>
+              <input v-model="nuevoModal.descripcion" maxlength="200"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
             </div>
           </div>
+
+          <!-- Componentes -->
+          <div class="mt-5">
+            <div class="flex items-center justify-between mb-2">
+              <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Componentes</h4>
+              <button @click="abrirNuevoComponente"
+                class="text-xs bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-full font-semibold transition">
+                + Agregar Componente
+              </button>
+            </div>
+
+            <div v-if="!nuevoModal.componentes.length" class="text-xs text-gray-400 italic py-2">
+              0 componentes agregados — este producto no descontará inventario automáticamente al venderse.
+            </div>
+            <div v-else class="border border-gray-200 rounded-xl overflow-hidden">
+              <div class="grid grid-cols-12 gap-2 px-3 py-2 bg-gray-50 text-xs font-bold text-gray-500 uppercase">
+                <span class="col-span-6">Item</span>
+                <span class="col-span-2 text-center">Cant.</span>
+                <span class="col-span-3 text-center">Elegible</span>
+                <span class="col-span-1"></span>
+              </div>
+              <div v-for="(c, i) in nuevoModal.componentes" :key="i"
+                class="grid grid-cols-12 gap-2 px-3 py-2 items-center border-t border-gray-100 text-sm">
+                <span class="col-span-6 text-gray-700 truncate">{{ c.nombre_item }}</span>
+                <span class="col-span-2 text-center font-semibold text-gray-600">{{ c.cantidad }}</span>
+                <span class="col-span-3 text-center">{{ c.elegible ? '☑' : '☐' }}</span>
+                <button @click="nuevoModal.componentes.splice(i, 1)"
+                  class="col-span-1 text-red-400 hover:text-red-600 text-lg text-center leading-none">✕</button>
+              </div>
+            </div>
+            <p v-if="nuevoModal.componentes.length" class="text-xs text-gray-400 mt-2">
+              {{ nuevoModal.componentes.length }} componentes agregados, {{ nuevoModal.componentes.filter(c => c.elegible).length }} elegibles
+            </p>
+          </div>
+
+          <p v-if="nuevoModal.error" class="text-red-500 text-xs mt-3">{{ nuevoModal.error }}</p>
+        </div>
+
+        <div class="flex gap-3 px-6 py-4 border-t border-gray-200 shrink-0">
+          <button @click="nuevoModal.visible = false"
+            class="flex-1 border border-gray-300 text-gray-600 font-semibold py-2.5 rounded-xl hover:bg-gray-50">Cancelar</button>
+          <button @click="confirmarNuevo" :disabled="nuevoModal.guardando"
+            class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl disabled:opacity-40">
+            {{ nuevoModal.guardando ? 'Guardando...' : (nuevoModal.modo === 'editar' ? 'Guardar cambios' : 'Guardar Producto') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: seleccionar componente -->
+    <div v-if="componenteModal.visible" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
+      <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+        <h3 class="font-bold text-gray-800 mb-4">Seleccionar Componente</h3>
+        <div class="space-y-3">
+          <div>
+            <label class="text-xs text-gray-500 block mb-1">Item</label>
+            <select v-model.number="componenteModal.item_inventario_id" @change="onComponenteItemChange"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400">
+              <option :value="null" disabled>Selecciona un item</option>
+              <option v-for="it in itemsInventario" :key="it.id" :value="it.id">
+                #{{ it.id }} {{ it.nombre }} ({{ it.tipo }})
+              </option>
+            </select>
+          </div>
           <div class="flex gap-2">
             <div class="flex-1">
-              <label class="text-xs text-gray-500 block mb-1">Precio (Q) *</label>
-              <input v-model.number="nuevoModal.precio" type="number" min="0"
+              <label class="text-xs text-gray-500 block mb-1">Cantidad</label>
+              <input v-model.number="componenteModal.cantidad" type="number" min="0" step="0.01"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
             </div>
             <div class="flex-1">
               <label class="text-xs text-gray-500 block mb-1">Unidad</label>
-              <input v-model="nuevoModal.unidad" placeholder="pieza / lb / porción"
-                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
+              <input v-model="componenteModal.unidad" disabled
+                class="w-full border border-gray-100 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-500" />
             </div>
           </div>
-          <div v-if="nuevoModal.categoria === 'combos'">
-            <label class="text-xs text-gray-500 block mb-1">Contenido del combo</label>
-            <input v-model="nuevoModal.contenido"
-              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
-          </div>
+          <label class="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" v-model="componenteModal.elegible" class="w-4 h-4 accent-orange-500" />
+            ¿Elegible? (el cliente puede elegir cuál de varios)
+          </label>
         </div>
-        <p v-if="nuevoModal.error" class="text-red-500 text-xs mt-2">{{ nuevoModal.error }}</p>
         <div class="flex gap-3 mt-5">
-          <button @click="nuevoModal.visible = false"
+          <button @click="componenteModal.visible = false"
             class="flex-1 border border-gray-300 text-gray-600 font-semibold py-2.5 rounded-xl hover:bg-gray-50">Cancelar</button>
-          <button @click="confirmarNuevo"
-            class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl">Agregar</button>
+          <button @click="confirmarComponente" :disabled="!componenteModal.item_inventario_id || !componenteModal.cantidad"
+            class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl disabled:opacity-40">Agregar</button>
         </div>
       </div>
     </div>
@@ -398,8 +493,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { getMenu, saveMenu, MENU_ITEMS, getCategorias, saveCategorias, CATEGORIAS } from '@/data/menu.js'
+import api from '@/services/api'
 
 const tabs = [
   { key: 'menu',        label: '🍗 Menú' },
@@ -565,32 +661,140 @@ function guardarIniciativas() {
   setTimeout(() => guardadoIni.value = false, 2500)
 }
 
-// ─── MODAL NUEVO PRODUCTO ───
+// ─── ITEMS DE INVENTARIO (para el selector de componentes) ───
+const itemsInventario = ref([])
+async function cargarItemsInventario() {
+  try {
+    const { data } = await api.get('/api/inventario/items')
+    itemsInventario.value = data
+  } catch {
+    itemsInventario.value = []
+  }
+}
+onMounted(cargarItemsInventario)
+
+// ─── MODAL NUEVO / EDITAR PRODUCTO (+ componentes de inventario) ───
 const nuevoModal = reactive({
-  visible: false, categoria: '', emoji: '', nombre: '',
-  precio: '', unidad: 'porción', contenido: '', error: '',
+  visible: false, modo: 'crear', productoId: null, categoria: '', emoji: '', nombre: '',
+  precio: '', unidad: 'porción', contenido: '', descripcion: '', componentes: [],
+  error: '', guardando: false,
 })
 
 function abrirNuevo(cat) {
-  Object.assign(nuevoModal, { visible: true, categoria: cat, emoji: '', nombre: '', precio: '', unidad: 'porción', contenido: '', error: '' })
+  Object.assign(nuevoModal, {
+    visible: true, modo: 'crear', productoId: null, categoria: cat, emoji: '', nombre: '',
+    precio: '', unidad: 'porción', contenido: '', descripcion: '', componentes: [],
+    error: '', guardando: false,
+  })
 }
 
-function confirmarNuevo() {
+// Abre el mismo modal en modo edición para un producto existente del menú local,
+// precargando su receta (producto_componentes) desde el backend si existe.
+async function abrirComponentes(item) {
+  Object.assign(nuevoModal, {
+    visible: true, modo: 'editar', productoId: item.id, categoria: item.categoria,
+    emoji: item.emoji, nombre: item.nombre, precio: item.precio, unidad: item.unidad || 'porción',
+    contenido: item.contenido || '', descripcion: '', componentes: [],
+    error: '', guardando: false,
+  })
+  try {
+    const { data } = await api.get('/api/config/productos')
+    const backend = data.find((p) => p.id === item.id)
+    if (backend) {
+      nuevoModal.descripcion = backend.descripcion || ''
+      nuevoModal.componentes = backend.componentes.map((c) => ({
+        item_inventario_id: c.item_id,
+        nombre_item: c.item_nombre,
+        cantidad: c.cantidad,
+        elegible: c.elegible,
+      }))
+    }
+  } catch {
+    // Producto sin contraparte en el backend (o sin permisos) - se edita solo localmente
+  }
+}
+
+// ─── SUB-MODAL: agregar componente ───
+const componenteModal = reactive({ visible: false, item_inventario_id: null, cantidad: 1, unidad: '', elegible: false })
+
+function abrirNuevoComponente() {
+  Object.assign(componenteModal, { visible: true, item_inventario_id: null, cantidad: 1, unidad: '', elegible: false })
+}
+
+function onComponenteItemChange() {
+  const it = itemsInventario.value.find((i) => i.id === componenteModal.item_inventario_id)
+  componenteModal.unidad = it?.unidad || ''
+}
+
+function confirmarComponente() {
+  const it = itemsInventario.value.find((i) => i.id === componenteModal.item_inventario_id)
+  if (!it || !componenteModal.cantidad) return
+  nuevoModal.componentes.push({
+    item_inventario_id: it.id,
+    nombre_item: it.nombre,
+    cantidad: Number(componenteModal.cantidad),
+    elegible: componenteModal.elegible,
+  })
+  componenteModal.visible = false
+}
+
+async function confirmarNuevo() {
   nuevoModal.error = ''
   if (!nuevoModal.nombre.trim()) { nuevoModal.error = 'El nombre es requerido'; return }
   if (!nuevoModal.precio || Number(nuevoModal.precio) < 0) { nuevoModal.error = 'Ingresa un precio válido'; return }
-  const maxId = menu.reduce((m, i) => Math.max(m, i.id || 0), 0)
-  const nuevo = {
-    id: maxId + 1,
-    nombre: nuevoModal.nombre.trim(),
-    precio: Number(nuevoModal.precio),
-    categoria: nuevoModal.categoria,
-    unidad: nuevoModal.unidad || 'porción',
-    emoji: nuevoModal.emoji || '🍽️',
+
+  nuevoModal.guardando = true
+  try {
+    const payload = {
+      nombre: nuevoModal.nombre.trim(),
+      precio: Number(nuevoModal.precio),
+      categoria: nuevoModal.categoria,
+      unidad: nuevoModal.unidad || 'porción',
+      descripcion: nuevoModal.descripcion?.trim() || null,
+      componentes: nuevoModal.componentes.map((c) => ({
+        item_inventario_id: c.item_inventario_id,
+        cantidad: c.cantidad,
+        elegible: c.elegible,
+      })),
+    }
+
+    let productoBackend
+    if (nuevoModal.modo === 'editar') {
+      const { data } = await api.patch(`/api/config/productos/${nuevoModal.productoId}`, payload)
+      productoBackend = data
+    } else {
+      const { data } = await api.post('/api/config/productos', payload)
+      productoBackend = data
+    }
+
+    if (nuevoModal.modo === 'editar') {
+      const item = menu.find((i) => i.id === productoBackend.id)
+      if (item) {
+        item.nombre = payload.nombre
+        item.precio = payload.precio
+        item.unidad = payload.unidad
+      }
+    } else {
+      const nuevo = {
+        id: productoBackend.id, // id asignado por el backend - mantiene el link con producto_componentes
+        nombre: payload.nombre,
+        precio: payload.precio,
+        categoria: nuevoModal.categoria,
+        unidad: payload.unidad,
+        emoji: nuevoModal.emoji || '🍽️',
+      }
+      if (nuevoModal.categoria === 'combos' && nuevoModal.contenido) nuevo.contenido = nuevoModal.contenido.trim()
+      menu.push(nuevo)
+    }
+    saveMenu(menu)
+    saveCategorias([...categorias])
+
+    nuevoModal.visible = false
+  } catch (e) {
+    nuevoModal.error = e.response?.data?.detail || 'Error al guardar el producto'
+  } finally {
+    nuevoModal.guardando = false
   }
-  if (nuevoModal.categoria === 'combos' && nuevoModal.contenido) nuevo.contenido = nuevoModal.contenido.trim()
-  menu.push(nuevo)
-  nuevoModal.visible = false
 }
 
 // ─── EMOJI PICKER ───

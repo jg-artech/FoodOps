@@ -20,11 +20,13 @@ from foodops.db.models import Base
 class ProductoMenu(Base):
     __tablename__ = "productos_menu"
 
-    id = Column(Integer, primary_key=True, autoincrement=False)
+    id = Column(Integer, primary_key=True)
     nombre = Column(String(100), nullable=False)
     precio = Column(Numeric(10, 2), nullable=False)
     categoria = Column(String(30), nullable=False)
     tipo = Column(String(20), nullable=False, default="individual")
+    unidad = Column(String(20), nullable=False, default="unidad")
+    descripcion = Column(String(200), nullable=True)
     activo = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
