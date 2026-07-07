@@ -262,6 +262,17 @@
       @confirmar="onPiezaConfirmada"
       @cancelar="modalPieza.visible = false"
     />
+
+    <!-- Modal de selección de componentes elegibles (guarnición / opcionales) -->
+    <SelectorComponentesModal
+      v-if="selectorModal.visible"
+      :nombre="selectorModal.item?.nombre"
+      :precio="selectorModal.item?.precio"
+      :grupos="selectorModal.grupos"
+      :fijos="selectorModal.fijos"
+      @confirmar="onSeleccionConfirmada"
+      @cancelar="selectorModal.visible = false"
+    />
   </div>
 </template>
 
@@ -271,6 +282,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/index'
 import { getMenu, getCategorias } from '@/data/menu.js'
 import PiezaModal from '@/components/PiezaModal.vue'
+import SelectorComponentesModal from '@/components/SelectorComponentesModal.vue'
 import api from '@/services/api'
 
 const router = useRouter()
@@ -335,6 +347,32 @@ const modalPieza = reactive({
   precio: 0,
 })
 
+const selectorModal = reactive({
+  visible: false,
+  item: null,
+  tipoPieza: null,
+  grupos: [],
+  fijos: [],
+})
+
+// Agrupa los componentes elegible=true de una receta por items_inventario.tipo:
+// un tipo con 2+ items se interpreta como "elige 1" (radio, p.ej. guarniciones);
+// un tipo con un único item suelto se interpreta como opcional (checkbox, p.ej.
+// "¿incluir bolsa?"). No existe un campo explícito de agrupación en el modelo de
+// datos, así que este es un heurístico: si un producto tuviera dos grupos de
+// radio distintos del MISMO tipo de item, se fusionarían en un solo grupo.
+function agruparElegibles(componentes) {
+  const porTipo = {}
+  for (const c of componentes.filter((c) => c.elegible)) {
+    if (!porTipo[c.tipo]) porTipo[c.tipo] = []
+    porTipo[c.tipo].push(c)
+  }
+  return Object.entries(porTipo).map(([tipo, items]) => ({
+    label: tipo === 'insumo' ? 'Guarnición' : 'Opcionales',
+    items,
+  }))
+}
+
 const metodos = [
   { value: 'efectivo',       label: 'Efectivo',       emoji: '💵' },
   { value: 'tarjeta',        label: 'Tarjeta',         emoji: '💳' },
@@ -353,9 +391,10 @@ const totalPrecio = computed(() => cart.value.reduce((acc, i) => acc + i.cantida
 const componentesPreview = computed(() => {
   const acumulado = {}
   for (const entry of cart.value) {
-    const componentes = recetas.value[entry.id] || []
-    for (const c of componentes) {
-      if (c.elegible) continue
+    const receta = recetas.value[entry.id] || []
+    const fijos = receta.filter((c) => !c.elegible)
+    const elegidos = entry.componentesSeleccionados || []
+    for (const c of [...fijos, ...elegidos]) {
       if (!acumulado[c.item_id]) acumulado[c.item_id] = { item_id: c.item_id, nombre: c.nombre, unidad: c.unidad, cantidad: 0 }
       acumulado[c.item_id].cantidad += c.cantidad * entry.cantidad
     }
@@ -379,19 +418,54 @@ function agregarItem(item) {
     modalPieza.visible = true
     return
   }
-  const existing = cart.value.find(i => i.cartKey === `item-${item.id}`)
-  if (existing) existing.cantidad++
-  else cart.value.push({ cartKey: `item-${item.id}`, id: item.id, nombre: item.nombre, precio: item.precio, cantidad: 1 })
+  procesarSeleccionOAgregar(item, null)
 }
 
 function onPiezaConfirmada(tipo) {
-  const item = modalPieza.item
-  const cartKey = `item-${item.id}-${tipo}`
-  const nombre = `${item.nombre} (${tipo})`
-  const existing = cart.value.find(i => i.cartKey === cartKey)
-  if (existing) existing.cantidad++
-  else cart.value.push({ cartKey, id: item.id, nombre, precio: item.precio, cantidad: 1 })
   modalPieza.visible = false
+  procesarSeleccionOAgregar(modalPieza.item, tipo)
+}
+
+// Si el producto tiene componentes elegible=true, abre el selector antes de
+// agregarlo al carrito; si no, lo agrega directo (comportamiento previo).
+function procesarSeleccionOAgregar(item, tipoPieza) {
+  const receta = recetas.value[item.id] || []
+  const grupos = agruparElegibles(receta)
+  if (grupos.length) {
+    selectorModal.item = item
+    selectorModal.tipoPieza = tipoPieza
+    selectorModal.grupos = grupos
+    selectorModal.fijos = receta.filter((c) => !c.elegible)
+    selectorModal.visible = true
+    return
+  }
+  agregarAlCarrito(item, tipoPieza, [])
+}
+
+function onSeleccionConfirmada(seleccionados) {
+  selectorModal.visible = false
+  agregarAlCarrito(selectorModal.item, selectorModal.tipoPieza, seleccionados)
+}
+
+function agregarAlCarrito(item, tipoPieza, componentesSeleccionados) {
+  const sufijoPieza = tipoPieza ? `-${tipoPieza}` : ''
+  const sufijoElegidos = componentesSeleccionados.length
+    ? '-' + componentesSeleccionados.map((c) => c.item_id).sort((a, b) => a - b).join('.')
+    : ''
+  const cartKey = `item-${item.id}${sufijoPieza}${sufijoElegidos}`
+  const extra = [tipoPieza, ...componentesSeleccionados.map((c) => c.nombre)].filter(Boolean).join(', ')
+  const nombre = extra ? `${item.nombre} (${extra})` : item.nombre
+
+  const existing = cart.value.find((i) => i.cartKey === cartKey)
+  if (existing) {
+    existing.cantidad++
+  } else {
+    cart.value.push({
+      cartKey, id: item.id, nombre, precio: item.precio, cantidad: 1,
+      tipoPieza: tipoPieza || null,
+      componentesSeleccionados,
+    })
+  }
 }
 
 function quitarItem(item) {
@@ -470,8 +544,11 @@ async function confirmarOrden() {
         precio_unitario:   i.precio,
         costo_unitario:    costoU,
         subtotal:          i.cantidad * i.precio,
-        tipo_pieza:        null,
+        tipo_pieza:        i.tipoPieza || null,
         producto_menu_id:  i.id,
+        componentes_elegidos: i.componentesSeleccionados?.length
+          ? i.componentesSeleccionados.map((c) => c.item_id)
+          : null,
       }
     })
     const costoTotal  = itemsTransaccion.reduce((s, i) => s + i.costo_unitario * i.cantidad, 0)

@@ -82,6 +82,10 @@ class ItemTransaccion(BaseModel):
     subtotal: Annotated[float, Field(ge=0)]
     tipo_pieza: Optional[Annotated[str, Field(max_length=50)]] = None
     producto_menu_id: Optional[int] = None
+    # item_inventario_id de los componentes "elegible=true" que el cliente eligió
+    # para este producto (p.ej. la guarnición elegida dentro de un combo). Si es
+    # None, ningún componente elegible se registra (comportamiento previo).
+    componentes_elegidos: Optional[List[int]] = None
 
 
 class CrearTransaccionRequest(BaseModel):

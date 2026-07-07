@@ -260,10 +260,10 @@ def _registrar_componentes_transaccion(session, transaccion_id: int, items) -> N
     """Para cada item vendido con producto_menu_id, expande su receta
     (producto_componentes) y registra el consumo exacto por componente.
 
-    Los componentes marcados elegible=True (guarnición a elegir dentro de un combo)
-    se omiten: el POS actual no captura qué guarnición específica eligió el cliente
-    (los combos se venden como una sola línea de carrito), así que no hay dato real
-    que registrar para esos slots todavía.
+    Los componentes marcados elegible=True (p.ej. la guarnición a elegir dentro de
+    un combo) solo se registran si el cliente frontend indicó explícitamente cuál
+    eligió vía item.componentes_elegidos (lista de item_inventario_id). Sin esa
+    lista, se omiten (no hay dato real que registrar para esos slots).
     """
     producto_ids = [item.producto_menu_id for item in items if item.producto_menu_id]
     if not producto_ids:
@@ -287,10 +287,12 @@ def _registrar_componentes_transaccion(session, transaccion_id: int, items) -> N
         producto = productos.get(item.producto_menu_id)
         if not producto:
             continue
-        tipo_origen = "combo" if producto.tipo == "combo" else "producto_individual"
+        tipo_origen_base = "combo" if producto.tipo == "combo" else "producto_individual"
+        elegidos = set(item.componentes_elegidos or [])
         for componente in componentes_por_producto.get(item.producto_menu_id, []):
-            if componente.elegible:
+            if componente.elegible and componente.item_inventario_id not in elegidos:
                 continue
+            tipo_origen = "componente_elegible" if componente.elegible else tipo_origen_base
             session.add(
                 TransaccionComponente(
                     transaccion_id=transaccion_id,
