@@ -6,12 +6,20 @@
     </div>
 
     <!-- Selector de responsable -->
-    <div class="flex gap-2 mb-4">
+    <div class="flex gap-2 mb-3">
       <button v-for="r in responsables" :key="r.value" @click="responsableTipo = r.value; cargarSugerencias()"
         class="flex-1 px-3 py-3 rounded-xl text-sm font-semibold border-2 transition-all"
         :class="responsableTipo === r.value ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-500'">
         {{ r.emoji }} {{ r.label }}
       </button>
+    </div>
+
+    <!-- Selector de fecha objetivo (por defecto hoy; el algoritmo compara
+         contra el consumo de "ayer" respecto a esta fecha) -->
+    <div class="flex items-center gap-2 mb-4">
+      <label class="text-xs text-gray-500 shrink-0">Sugerencias para:</label>
+      <input type="date" v-model="fechaSeleccionada" @change="cargarSugerencias"
+        class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
     </div>
 
     <div v-if="sugerencias" class="text-xs text-gray-400 mb-4">
@@ -112,6 +120,17 @@ const responsables = [
 const responsableTipo = ref('POLLO')
 const responsableLabelActual = computed(() => responsables.find((r) => r.value === responsableTipo.value)?.label)
 
+// YYYY-MM-DD a partir de componentes LOCALES (no toISOString(), que convierte
+// a UTC y puede saltar de día según la hora/zona horaria del navegador - el
+// mismo bug de timezone documentado en el backend, ver local_day_bounds()).
+function fechaLocalISO(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+const fechaSeleccionada = ref(fechaLocalISO(new Date()))
+
 const sugerencias = ref(null)
 const cantidadesFinales = reactive({})
 const loading = ref(true)
@@ -137,7 +156,9 @@ async function cargarSugerencias() {
   pedidoCreado.value = null
   Object.keys(cantidadesFinales).forEach((k) => delete cantidadesFinales[k])
   try {
-    const { data } = await api.get('/api/abastecimiento/sugerencias', { params: { responsable_tipo: responsableTipo.value } })
+    const { data } = await api.get('/api/abastecimiento/sugerencias', {
+      params: { responsable_tipo: responsableTipo.value, fecha: fechaSeleccionada.value },
+    })
     sugerencias.value = data
     for (const punto of data.puntos) {
       for (const it of punto.items) {

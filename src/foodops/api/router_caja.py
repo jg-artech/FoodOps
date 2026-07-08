@@ -584,7 +584,12 @@ def actualizar_item_inventario(
 
 
 @router.get("/inventario/items")
-def listar_items_inventario(current_user: TokenData = Depends(requiere_rol(*_ROLES_TIENDA))):
+def listar_items_inventario(
+    # Catálogo, no información sensible - también accesible a gerente_central
+    # (lo necesita para el selector de item en /central/reglas), sin ampliar
+    # _ROLES_TIENDA global (que también protege caja/gastos/desperdicios).
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_TIENDA, "gerente_central")),
+):
     session = Session()
     try:
         items = session.execute(

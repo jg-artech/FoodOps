@@ -18,6 +18,7 @@ import StockView from '@/views/StockView.vue'
 import PedidosReabastecimientoView from '@/views/PedidosReabastecimientoView.vue'
 import AbastecimientoView from '@/views/AbastecimientoView.vue'
 import InventarioDiarioView from '@/views/InventarioDiarioView.vue'
+import ReglasReabastecimientoView from '@/views/ReglasReabastecimientoView.vue'
 
 
 const routes = [
@@ -39,7 +40,9 @@ const routes = [
   { path: '/caja/cierre', component: CierreCajaView, meta: { requiresAuth: true } },
   { path: '/caja/stock', component: StockView, meta: { requiresAuth: true } },
   { path: '/caja/pedidos-reabastecimiento', component: PedidosReabastecimientoView, meta: { requiresAuth: true } },
+  { path: '/central', redirect: '/central/abastecimiento' },
   { path: '/central/abastecimiento', component: AbastecimientoView, meta: { requiresAuth: true } },
+  { path: '/central/reglas', component: ReglasReabastecimientoView, meta: { requiresAuth: true } },
   { path: '/pos/inventario-diario', component: InventarioDiarioView, meta: { requiresAuth: true } },
 ]
 

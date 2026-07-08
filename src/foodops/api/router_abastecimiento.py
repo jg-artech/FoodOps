@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
-from foodops.core.auth import TokenData, requiere_rol
+from foodops.core.auth import TokenData, get_current_user, requiere_rol
 from foodops.core.config import settings
 from foodops.db.models import PuntoVenta
 from foodops.db.models_caja import ItemInventario
@@ -315,11 +315,13 @@ def listar_pedidos_abastecimiento(
 
 def _regla_dict(session, regla: ReglaReabastecimiento) -> dict:
     item = session.get(ItemInventario, regla.item_inventario_id)
+    punto = session.get(PuntoVenta, regla.punto_venta_id) if regla.punto_venta_id else None
     return {
         "id": regla.id,
         "item_inventario_id": regla.item_inventario_id,
         "item_nombre": item.nombre if item else "",
         "punto_venta_id": regla.punto_venta_id,
+        "punto_nombre": punto.nombre if punto else None,
         "stock_minimo": float(regla.stock_minimo),
         "stock_maximo": float(regla.stock_maximo),
         "consumo_diario_base": float(regla.consumo_diario_base) if regla.consumo_diario_base is not None else None,
@@ -432,5 +434,56 @@ def actualizar_regla_reabastecimiento(
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+@router.delete("/reglas-reabastecimiento/{regla_id}", status_code=204)
+def eliminar_regla_reabastecimiento(
+    regla_id: int,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_GERENCIA)),
+):
+    session = Session()
+    try:
+        regla = session.get(ReglaReabastecimiento, regla_id)
+        if not regla:
+            raise HTTPException(status_code=404, detail="Regla no encontrada")
+
+        registrar_auditoria(
+            session,
+            accion="ELIMINAR_REGLA_REABASTECIMIENTO",
+            entidad="regla_reabastecimiento",
+            entidad_id=regla.id,
+            usuario_id=current_user.user_id,
+            detalle={"item_inventario_id": regla.item_inventario_id, "punto_venta_id": regla.punto_venta_id},
+        )
+        session.delete(regla)
+        session.commit()
+        return None
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Puntos de venta (no existía un endpoint dedicado - lo necesita el selector
+# de tienda del formulario de reglas; abierto a cualquier usuario autenticado,
+# mismo criterio que /api/inventario/items)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/puntos-venta")
+def listar_puntos_venta(current_user: TokenData = Depends(get_current_user)):
+    session = Session()
+    try:
+        puntos = session.execute(
+            select(PuntoVenta).where(PuntoVenta.activo.is_(True)).order_by(PuntoVenta.id)
+        ).scalars().all()
+        return [{"id": p.id, "nombre": p.nombre} for p in puntos]
     finally:
         session.close()
