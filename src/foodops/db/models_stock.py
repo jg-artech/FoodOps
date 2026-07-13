@@ -42,9 +42,14 @@ class ProductoComponente(Base):
     cantidad = Column(Numeric(8, 2), nullable=False)
     elegible = Column(Boolean, default=False)
     # NULL = componente fijo. Un entero agrupa componentes del mismo producto que
-    # forman un "elige 1" independiente (p.ej. Pieza vs Guarnición en ¼ Pollo).
+    # forman un "elige N" independiente (p.ej. Pieza vs Guarnición en ¼ Pollo).
     grupo_elegible = Column(Integer, nullable=True)
     nombre_grupo = Column(String(100), nullable=True)
+    # Cuántas opciones del grupo debe/puede elegir el cliente. 1/1 = radio (default,
+    # compatible con grupos existentes). Todas las filas de un mismo grupo_elegible
+    # deben compartir el mismo valor (ver _validar_grupos en router_config.py).
+    cantidad_elegible_minima = Column(Integer, nullable=False, default=1)
+    cantidad_elegible_maxima = Column(Integer, nullable=False, default=1)
 
 
 class TransaccionComponente(Base):

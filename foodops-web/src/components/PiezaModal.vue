@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
     <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
       <div class="p-6 border-b border-gray-100">
         <h3 class="text-xl font-bold text-gray-800">🍗 Seleccionar pieza</h3>

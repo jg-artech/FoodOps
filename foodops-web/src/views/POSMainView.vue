@@ -13,13 +13,13 @@
         </div>
       </div>
       <div class="flex gap-4 mt-3 text-xs font-medium">
-        <span class="bg-white bg-opacity-20 rounded-full px-3 py-1">
+        <span class="bg-white/20 rounded-full px-3 py-1">
           🟡 {{ stats.pendiente }} pendiente
         </span>
-        <span class="bg-white bg-opacity-20 rounded-full px-3 py-1">
+        <span class="bg-white/20 rounded-full px-3 py-1">
           🔵 {{ stats.preparando }} en prep.
         </span>
-        <span class="bg-white bg-opacity-20 rounded-full px-3 py-1">
+        <span class="bg-white/20 rounded-full px-3 py-1">
           🟢 {{ stats.listo }} listo
         </span>
       </div>

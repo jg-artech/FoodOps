@@ -368,7 +368,14 @@ function agruparElegibles(componentes) {
 
   const porGrupo = {}
   for (const c of conGrupo) {
-    if (!porGrupo[c.grupo_elegible]) porGrupo[c.grupo_elegible] = { label: c.nombre_grupo || `Grupo ${c.grupo_elegible}`, items: [] }
+    if (!porGrupo[c.grupo_elegible]) {
+      porGrupo[c.grupo_elegible] = {
+        label: c.nombre_grupo || `Grupo ${c.grupo_elegible}`,
+        items: [],
+        min: c.cantidad_elegible_minima ?? 1,
+        max: c.cantidad_elegible_maxima ?? 1,
+      }
+    }
     porGrupo[c.grupo_elegible].items.push(c)
   }
 
@@ -377,9 +384,13 @@ function agruparElegibles(componentes) {
     if (!porTipo[c.tipo]) porTipo[c.tipo] = []
     porTipo[c.tipo].push(c)
   }
+  // Grupos legacy sin grupo_elegible formal: mismo heurístico de siempre
+  // (varios items -> elige 1 obligatorio; un solo item -> opcional).
   const gruposHeuristicos = Object.entries(porTipo).map(([tipo, items]) => ({
     label: tipo === 'insumo' ? 'Guarnición' : 'Opcionales',
     items,
+    min: items.length > 1 ? 1 : 0,
+    max: 1,
   }))
 
   return [...Object.values(porGrupo), ...gruposHeuristicos]
@@ -492,13 +503,24 @@ function onSeleccionConfirmada(seleccionados) {
   agregarAlCarrito(selectorModal.item, selectorModal.tipoPieza, seleccionados)
 }
 
+// Agrupa componentesSeleccionados (que puede traer el mismo item_id repetido,
+// p.ej. 2x Arroz de las guarniciones de un combo) en "2x Arroz con Verduras"
+// en vez de listar el nombre duplicado.
+function etiquetaComponentesElegidos(componentesSeleccionados) {
+  const conteo = new Map()
+  for (const c of componentesSeleccionados) {
+    conteo.set(c.item_id, { nombre: c.nombre, cantidad: (conteo.get(c.item_id)?.cantidad || 0) + 1 })
+  }
+  return [...conteo.values()].map(({ nombre, cantidad }) => (cantidad > 1 ? `${cantidad}x ${nombre}` : nombre))
+}
+
 function agregarAlCarrito(item, tipoPieza, componentesSeleccionados) {
   const sufijoPieza = tipoPieza ? `-${tipoPieza}` : ''
   const sufijoElegidos = componentesSeleccionados.length
     ? '-' + componentesSeleccionados.map((c) => c.item_id).sort((a, b) => a - b).join('.')
     : ''
   const cartKey = `item-${item.id}${sufijoPieza}${sufijoElegidos}`
-  const extra = [tipoPieza, ...componentesSeleccionados.map((c) => c.nombre)].filter(Boolean).join(', ')
+  const extra = [tipoPieza, ...etiquetaComponentesElegidos(componentesSeleccionados)].filter(Boolean).join(', ')
   const nombre = extra ? `${item.nombre} (${extra})` : item.nombre
 
   const existing = cart.value.find((i) => i.cartKey === cartKey)

@@ -71,7 +71,7 @@
     <p v-if="errorMsg" class="text-red-500 text-sm text-center mt-3">{{ errorMsg }}</p>
 
     <!-- Modal crear/editar -->
-    <div v-if="modalAbierto" class="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center z-50 p-2 sm:p-4">
+    <div v-if="modalAbierto" class="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-2 sm:p-4">
       <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
         <div class="px-5 py-4 border-b border-gray-200 shrink-0">
           <h3 class="font-bold text-gray-800">{{ modalTitulo }}</h3>

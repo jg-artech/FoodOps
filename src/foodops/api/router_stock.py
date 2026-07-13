@@ -458,6 +458,8 @@ def listar_productos_menu(current_user: TokenData = Depends(get_current_user)):
                     "elegible": c.elegible,
                     "grupo_elegible": c.grupo_elegible,
                     "nombre_grupo": c.nombre_grupo,
+                    "cantidad_elegible_minima": c.cantidad_elegible_minima,
+                    "cantidad_elegible_maxima": c.cantidad_elegible_maxima,
                 }
             )
         return [

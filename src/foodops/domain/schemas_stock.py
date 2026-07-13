@@ -145,14 +145,22 @@ class ComponenteProductoCreate(BaseModel):
     # grupo 2 "Guarnición"). Se normalizan a None si elegible=False.
     grupo_elegible: Optional[Annotated[int, Field(ge=1, le=50)]] = None
     nombre_grupo: Optional[Annotated[str, Field(max_length=100)]] = None
+    # Cuántas opciones del grupo debe/puede elegir el cliente (1/1 = radio, el
+    # comportamiento previo). Solo tienen sentido si elegible=True.
+    cantidad_elegible_minima: Annotated[int, Field(ge=1, le=20)] = 1
+    cantidad_elegible_maxima: Annotated[int, Field(ge=1, le=20)] = 1
 
     @model_validator(mode="after")
     def _normalizar_grupo(self) -> "ComponenteProductoCreate":
         if not self.elegible:
             self.grupo_elegible = None
             self.nombre_grupo = None
+            self.cantidad_elegible_minima = 1
+            self.cantidad_elegible_maxima = 1
         elif self.grupo_elegible is not None and not (self.nombre_grupo or "").strip():
             raise ValueError("nombre_grupo es requerido cuando se asigna grupo_elegible")
+        if self.cantidad_elegible_maxima < self.cantidad_elegible_minima:
+            raise ValueError("cantidad_elegible_maxima no puede ser menor que cantidad_elegible_minima")
         return self
 
 
@@ -184,6 +192,8 @@ class ComponenteProductoResponse(BaseModel):
     elegible: bool
     grupo_elegible: Optional[int] = None
     nombre_grupo: Optional[str] = None
+    cantidad_elegible_minima: int = 1
+    cantidad_elegible_maxima: int = 1
 
 
 class ProductoConComponentesResponse(BaseModel):

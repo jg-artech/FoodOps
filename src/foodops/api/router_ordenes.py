@@ -256,6 +256,43 @@ def reporte_cierre(
         session.close()
 
 
+def _validar_componentes_grupo(componentes, elegidos: Counter) -> None:
+    """Valida que la cantidad de opciones elegidas por grupo_elegible esté
+    dentro de [cantidad_elegible_minima, cantidad_elegible_maxima]. `elegidos`
+    es un Counter (item_inventario_id -> veces elegido) para permitir repetir
+    la misma opción varias veces (p.ej. 2x Arroz de las 3 guarniciones que
+    permite el combo) - cada repetición cuenta contra el máximo del grupo.
+    Grupos legacy sin grupo_elegible formal no se validan aquí (no hay regla
+    que aplicar)."""
+    grupos: dict = {}
+    for c in componentes:
+        if c.grupo_elegible is None:
+            continue
+        grupo = grupos.setdefault(
+            c.grupo_elegible,
+            {
+                "nombre": c.nombre_grupo or f"Grupo {c.grupo_elegible}",
+                "min": c.cantidad_elegible_minima,
+                "max": c.cantidad_elegible_maxima,
+                "item_ids": set(),
+            },
+        )
+        grupo["item_ids"].add(c.item_inventario_id)
+
+    for grupo in grupos.values():
+        cantidad_elegida = sum(elegidos[iid] for iid in grupo["item_ids"])
+        if cantidad_elegida < grupo["min"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{grupo['nombre']}: debes elegir mín. {grupo['min']} opción(es)",
+            )
+        if cantidad_elegida > grupo["max"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{grupo['nombre']}: máximo {grupo['max']} opción(es)",
+            )
+
+
 def _registrar_componentes_transaccion(session, transaccion_id: int, items) -> None:
     """Para cada item vendido con producto_menu_id, expande su receta
     (producto_componentes) y registra el consumo exacto por componente.
@@ -288,16 +325,23 @@ def _registrar_componentes_transaccion(session, transaccion_id: int, items) -> N
         if not producto:
             continue
         tipo_origen_base = "combo" if producto.tipo == "combo" else "producto_individual"
-        elegidos = set(item.componentes_elegidos or [])
-        for componente in componentes_por_producto.get(item.producto_menu_id, []):
-            if componente.elegible and componente.item_inventario_id not in elegidos:
+        elegidos = Counter(item.componentes_elegidos or [])
+        componentes_producto = componentes_por_producto.get(item.producto_menu_id, [])
+        _validar_componentes_grupo(componentes_producto, elegidos)
+        for componente in componentes_producto:
+            veces_elegido = elegidos[componente.item_inventario_id]
+            if componente.elegible and veces_elegido == 0:
                 continue
+            # Componentes fijos se consumen una vez por unidad vendida; los
+            # elegibles se multiplican también por cuántas veces se repitió esa
+            # misma opción dentro del grupo (p.ej. 2x Arroz de las 3 guarniciones).
+            multiplicador = veces_elegido if componente.elegible else 1
             tipo_origen = "componente_elegible" if componente.elegible else tipo_origen_base
             session.add(
                 TransaccionComponente(
                     transaccion_id=transaccion_id,
                     item_inventario_id=componente.item_inventario_id,
-                    cantidad=float(componente.cantidad) * item.cantidad,
+                    cantidad=float(componente.cantidad) * item.cantidad * multiplicador,
                     tipo_origen=tipo_origen,
                 )
             )

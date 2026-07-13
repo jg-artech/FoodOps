@@ -37,6 +37,7 @@
           v-for="orden in ordenes"
           :key="orden.id"
           :orden="orden"
+          :recetas="recetas"
           @cambiar="cambiarEstado"
         />
       </div>
@@ -57,6 +58,22 @@ const horaActual = ref('')
 let prevIds = new Set()
 let pollTimer = null
 let clockTimer = null
+
+// Receta completa (fijos + elegibles) por producto_menu_id, para que el ticket
+// muestre TODOS los componentes de la orden (no solo la guarnición elegida que
+// ya viene en el nombre del item). Se carga una sola vez; la receta de cada
+// producto no cambia mientras la pantalla de cocina está abierta.
+const recetas = ref({})
+async function cargarRecetas() {
+  try {
+    const { data } = await api.get('/api/productos-menu')
+    const map = {}
+    for (const p of data) map[p.id] = p.componentes
+    recetas.value = map
+  } catch {
+    recetas.value = {}
+  }
+}
 
 function playBell() {
   try {
@@ -107,6 +124,7 @@ async function cambiarEstado(orden, nuevoEstado) {
 onMounted(() => {
   actualizarHora()
   clockTimer = setInterval(actualizarHora, 1000)
+  cargarRecetas()
   fetchOrdenes()
   pollTimer = setInterval(fetchOrdenes, 2000)
 })

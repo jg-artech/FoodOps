@@ -17,7 +17,7 @@
         class="px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition"
         :class="tabActivo === tab.value ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
         {{ tab.label }}
-        <span class="ml-1 bg-white bg-opacity-30 rounded-full px-1.5 text-xs">{{ conteo(tab.value) }}</span>
+        <span class="ml-1 bg-white/30 rounded-full px-1.5 text-xs">{{ conteo(tab.value) }}</span>
       </button>
     </div>
 

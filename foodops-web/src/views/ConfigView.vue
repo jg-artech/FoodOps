@@ -166,7 +166,7 @@
     </div>
 
     <!-- MODAL: desglose de ingredientes de combo -->
-    <div v-if="desgloseModal.visible" class="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center z-50 p-2 sm:p-4">
+    <div v-if="desgloseModal.visible" class="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-2 sm:p-4">
       <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
         <!-- Header -->
         <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
@@ -305,7 +305,7 @@
     </div>
 
     <!-- MODAL: nuevo producto / componentes -->
-    <div v-if="nuevoModal.visible" class="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-4">
+    <div v-if="nuevoModal.visible" class="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
       <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
         <div class="px-6 py-4 border-b border-gray-200 shrink-0">
           <h3 class="font-bold text-gray-800">
@@ -361,6 +361,27 @@
               </button>
             </div>
 
+            <!-- Grupos elegibles: editar cuántas opciones puede/debe elegir el cliente -->
+            <div v-if="gruposResumen.length" class="mb-3 border border-blue-100 bg-blue-50 rounded-xl p-3 space-y-2">
+              <p class="text-xs font-bold text-blue-700 uppercase tracking-wide">Grupos elegibles</p>
+              <div v-for="g in gruposResumen" :key="g.grupo_elegible"
+                class="flex items-center gap-3 text-sm">
+                <span class="flex-1 text-gray-700 truncate">{{ g.nombre_grupo }} <span class="text-gray-400">({{ g.cantidad_opciones }} opciones)</span></span>
+                <label class="flex items-center gap-1 text-xs text-gray-500">
+                  Mín.
+                  <input type="number" min="1" :max="g.cantidad_opciones" :value="g.cantidad_elegible_minima"
+                    @change="actualizarMinMaxGrupo(g.grupo_elegible, 'cantidad_elegible_minima', $event.target.value)"
+                    class="w-14 border border-gray-200 rounded-lg px-2 py-1 text-sm text-center focus:outline-none focus:ring-1 focus:ring-orange-400" />
+                </label>
+                <label class="flex items-center gap-1 text-xs text-gray-500">
+                  Máx.
+                  <input type="number" min="1" :max="g.cantidad_opciones" :value="g.cantidad_elegible_maxima"
+                    @change="actualizarMinMaxGrupo(g.grupo_elegible, 'cantidad_elegible_maxima', $event.target.value)"
+                    class="w-14 border border-gray-200 rounded-lg px-2 py-1 text-sm text-center focus:outline-none focus:ring-1 focus:ring-orange-400" />
+                </label>
+              </div>
+            </div>
+
             <div v-if="!nuevoModal.componentes.length" class="text-xs text-gray-400 italic py-2">
               0 componentes agregados — este producto no descontará inventario automáticamente al venderse.
             </div>
@@ -376,7 +397,7 @@
                 <span class="col-span-6 text-gray-700 truncate">{{ c.nombre_item }}</span>
                 <span class="col-span-2 text-center font-semibold text-gray-600">{{ c.cantidad }}</span>
                 <span class="col-span-3 text-center text-xs truncate" :title="c.nombre_grupo || ''">
-                  {{ c.elegible ? (c.nombre_grupo ? `☑ ${c.nombre_grupo}` : '☑') : '☐' }}
+                  {{ c.elegible ? (c.nombre_grupo ? `☑ ${c.nombre_grupo} (${c.cantidad_elegible_minima}-${c.cantidad_elegible_maxima})` : '☑') : '☐' }}
                 </span>
                 <button @click="nuevoModal.componentes.splice(i, 1)"
                   class="col-span-1 text-red-400 hover:text-red-600 text-lg text-center leading-none">✕</button>
@@ -402,7 +423,7 @@
     </div>
 
     <!-- MODAL: seleccionar componente -->
-    <div v-if="componenteModal.visible" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
+    <div v-if="componenteModal.visible" class="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4">
       <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
         <h3 class="font-bold text-gray-800 mb-4">Seleccionar Componente</h3>
         <div class="space-y-3">
@@ -450,6 +471,23 @@
                 placeholder="Ej: Pieza de Pollo" autocomplete="off"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:bg-gray-100 disabled:text-gray-500" />
             </div>
+            <div class="flex gap-2">
+              <div class="flex-1">
+                <label class="text-xs text-gray-500 block mb-1">Mínimo a elegir</label>
+                <input v-model.number="componenteModal.cantidad_elegible_minima" type="number" min="1" max="20"
+                  :disabled="componenteModal.grupoSeleccionado !== 'nuevo'"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:bg-gray-100 disabled:text-gray-500" />
+              </div>
+              <div class="flex-1">
+                <label class="text-xs text-gray-500 block mb-1">Máximo a elegir</label>
+                <input v-model.number="componenteModal.cantidad_elegible_maxima" type="number" min="1" max="20"
+                  :disabled="componenteModal.grupoSeleccionado !== 'nuevo'"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:bg-gray-100 disabled:text-gray-500" />
+              </div>
+            </div>
+            <p v-if="componenteModal.cantidad_elegible_maxima < componenteModal.cantidad_elegible_minima" class="text-red-500 text-xs">
+              El máximo no puede ser menor que el mínimo
+            </p>
           </div>
         </div>
         <div class="flex gap-3 mt-5">
@@ -462,7 +500,7 @@
     </div>
 
     <!-- MODAL: nueva iniciativa -->
-    <div v-if="iniModal.visible" class="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-4">
+    <div v-if="iniModal.visible" class="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
       <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
         <h3 class="font-bold text-gray-800 mb-4">Nueva iniciativa</h3>
         <div class="space-y-3">
@@ -493,7 +531,7 @@
     </div>
 
     <!-- MODAL: emoji picker -->
-    <div v-if="emojiModal.visible" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div v-if="emojiModal.visible" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div class="bg-white rounded-2xl w-80 p-5 shadow-2xl">
         <h3 class="font-bold text-gray-800 mb-3">Cambiar emoji</h3>
         <div class="grid grid-cols-6 gap-2 mb-4">
@@ -730,6 +768,8 @@ async function abrirComponentes(item) {
         elegible: c.elegible,
         grupo_elegible: c.grupo_elegible ?? null,
         nombre_grupo: c.nombre_grupo ?? null,
+        cantidad_elegible_minima: c.cantidad_elegible_minima ?? 1,
+        cantidad_elegible_maxima: c.cantidad_elegible_maxima ?? 1,
       }))
     }
   } catch {
@@ -741,7 +781,44 @@ async function abrirComponentes(item) {
 const componenteModal = reactive({
   visible: false, item_inventario_id: null, cantidad: 1, unidad: '', elegible: false,
   grupoSeleccionado: 'nuevo', nombre_grupo: '',
+  cantidad_elegible_minima: 1, cantidad_elegible_maxima: 1,
 })
+
+// Resumen de grupos elegibles del producto en edición (uno por grupo_elegible),
+// para poder cambiar cuántas opciones debe/puede elegir el cliente sin tener que
+// borrar y re-agregar cada componente del grupo.
+const gruposResumen = computed(() => {
+  const vistos = new Map()
+  for (const c of nuevoModal.componentes) {
+    if (!c.elegible || c.grupo_elegible == null) continue
+    if (!vistos.has(c.grupo_elegible)) {
+      vistos.set(c.grupo_elegible, {
+        grupo_elegible: c.grupo_elegible,
+        nombre_grupo: c.nombre_grupo,
+        cantidad_elegible_minima: c.cantidad_elegible_minima,
+        cantidad_elegible_maxima: c.cantidad_elegible_maxima,
+        cantidad_opciones: 0,
+      })
+    }
+    vistos.get(c.grupo_elegible).cantidad_opciones++
+  }
+  return [...vistos.values()].sort((a, b) => a.grupo_elegible - b.grupo_elegible)
+})
+
+// Cambia min/max para TODAS las filas de ese grupo a la vez, así se mantienen
+// consistentes (el backend rechaza un grupo con min/max distinto entre filas).
+function actualizarMinMaxGrupo(grupoId, campo, valor) {
+  const n = Number(valor)
+  if (!n || n < 1) return
+  const otroCampo = campo === 'cantidad_elegible_minima' ? 'cantidad_elegible_maxima' : 'cantidad_elegible_minima'
+  for (const c of nuevoModal.componentes) {
+    if (!c.elegible || c.grupo_elegible !== grupoId) continue
+    c[campo] = n
+    // Si el mínimo quedó por encima del máximo (o viceversa), empareja el otro extremo.
+    if (campo === 'cantidad_elegible_minima' && n > c[otroCampo]) c[otroCampo] = n
+    if (campo === 'cantidad_elegible_maxima' && n < c[otroCampo]) c[otroCampo] = n
+  }
+}
 
 // Grupos ya usados por otros componentes de este mismo producto (para reutilizar
 // el mismo grupo_elegible en vez de crear uno nuevo cada vez).
@@ -749,7 +826,12 @@ const gruposExistentes = computed(() => {
   const vistos = new Map()
   for (const c of nuevoModal.componentes) {
     if (c.elegible && c.grupo_elegible != null && !vistos.has(c.grupo_elegible)) {
-      vistos.set(c.grupo_elegible, { grupo_elegible: c.grupo_elegible, nombre_grupo: c.nombre_grupo })
+      vistos.set(c.grupo_elegible, {
+        grupo_elegible: c.grupo_elegible,
+        nombre_grupo: c.nombre_grupo,
+        cantidad_elegible_minima: c.cantidad_elegible_minima ?? 1,
+        cantidad_elegible_maxima: c.cantidad_elegible_maxima ?? 1,
+      })
     }
   }
   return [...vistos.values()].sort((a, b) => a.grupo_elegible - b.grupo_elegible)
@@ -758,6 +840,7 @@ const gruposExistentes = computed(() => {
 const puedeConfirmarComponente = computed(() => {
   if (!componenteModal.item_inventario_id || !componenteModal.cantidad) return false
   if (componenteModal.elegible && componenteModal.grupoSeleccionado === 'nuevo' && !componenteModal.nombre_grupo.trim()) return false
+  if (componenteModal.elegible && componenteModal.cantidad_elegible_maxima < componenteModal.cantidad_elegible_minima) return false
   return true
 })
 
@@ -765,6 +848,7 @@ function abrirNuevoComponente() {
   Object.assign(componenteModal, {
     visible: true, item_inventario_id: null, cantidad: 1, unidad: '', elegible: false,
     grupoSeleccionado: 'nuevo', nombre_grupo: '',
+    cantidad_elegible_minima: 1, cantidad_elegible_maxima: 1,
   })
 }
 
@@ -778,15 +862,21 @@ watch(() => componenteModal.elegible, (elegible) => {
   const primero = gruposExistentes.value[0]
   componenteModal.grupoSeleccionado = primero ? primero.grupo_elegible : 'nuevo'
   componenteModal.nombre_grupo = primero ? primero.nombre_grupo : ''
+  componenteModal.cantidad_elegible_minima = primero ? primero.cantidad_elegible_minima : 1
+  componenteModal.cantidad_elegible_maxima = primero ? primero.cantidad_elegible_maxima : 1
 })
 
 watch(() => componenteModal.grupoSeleccionado, (grupoSeleccionado) => {
   if (grupoSeleccionado === 'nuevo') {
     componenteModal.nombre_grupo = ''
+    componenteModal.cantidad_elegible_minima = 1
+    componenteModal.cantidad_elegible_maxima = 1
     return
   }
   const grupo = gruposExistentes.value.find((g) => g.grupo_elegible === grupoSeleccionado)
   componenteModal.nombre_grupo = grupo?.nombre_grupo || ''
+  componenteModal.cantidad_elegible_minima = grupo?.cantidad_elegible_minima ?? 1
+  componenteModal.cantidad_elegible_maxima = grupo?.cantidad_elegible_maxima ?? 1
 })
 
 function confirmarComponente() {
@@ -795,7 +885,11 @@ function confirmarComponente() {
 
   let grupo_elegible = null
   let nombre_grupo = null
+  let cantidad_elegible_minima = 1
+  let cantidad_elegible_maxima = 1
   if (componenteModal.elegible) {
+    cantidad_elegible_minima = Number(componenteModal.cantidad_elegible_minima) || 1
+    cantidad_elegible_maxima = Number(componenteModal.cantidad_elegible_maxima) || 1
     if (componenteModal.grupoSeleccionado === 'nuevo') {
       const maxGrupo = gruposExistentes.value.reduce((m, g) => Math.max(m, g.grupo_elegible), 0)
       grupo_elegible = maxGrupo + 1
@@ -813,6 +907,8 @@ function confirmarComponente() {
     elegible: componenteModal.elegible,
     grupo_elegible,
     nombre_grupo,
+    cantidad_elegible_minima,
+    cantidad_elegible_maxima,
   })
   componenteModal.visible = false
 }
@@ -836,6 +932,8 @@ async function confirmarNuevo() {
         elegible: c.elegible,
         grupo_elegible: c.grupo_elegible ?? null,
         nombre_grupo: c.nombre_grupo ?? null,
+        cantidad_elegible_minima: c.cantidad_elegible_minima ?? 1,
+        cantidad_elegible_maxima: c.cantidad_elegible_maxima ?? 1,
       })),
     }
 

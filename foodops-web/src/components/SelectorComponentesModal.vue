@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center z-50 p-2 sm:p-4">
+  <div class="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-2 sm:p-4">
     <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
       <!-- Header -->
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
@@ -24,9 +24,30 @@
           </div>
         </div>
 
-        <hr v-if="gruposRadio.length && gruposCheckbox.length" class="my-4 border-gray-100" />
+        <hr v-if="gruposRadio.length && gruposMulti.length" class="my-4 border-gray-100" />
 
-        <!-- Opcionales (checkbox) -->
+        <!-- Grupos de cantidad múltiple (elige N de M, repetibles, con tope máximo) -->
+        <div v-for="(grupo, gi) in gruposMulti" :key="'multi-' + gi" class="mb-5">
+          <p class="text-sm font-bold text-gray-700 mb-2">🧂 {{ grupo.label }} (elige {{ grupo.min }}-{{ grupo.max }}, se puede repetir):</p>
+          <div class="space-y-1.5">
+            <div v-for="it in grupo.items" :key="it.item_id"
+              class="flex items-center justify-between gap-2 border border-gray-200 rounded-xl px-3 py-2">
+              <span class="text-sm text-gray-700">{{ it.nombre }}<span class="text-gray-400"> ({{ it.unidad }})</span></span>
+              <div class="flex items-center gap-2 shrink-0">
+                <button type="button" @click="decrementarMulti(gi, it)" :disabled="cantidadDeItemMulti(gi, it) === 0"
+                  class="w-7 h-7 rounded-full border border-gray-300 text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed leading-none">−</button>
+                <span class="w-5 text-center text-sm font-semibold text-gray-700">{{ cantidadDeItemMulti(gi, it) }}</span>
+                <button type="button" @click="incrementarMulti(gi, grupo, it)" :disabled="(seleccionMulti[gi] || []).length >= grupo.max"
+                  class="w-7 h-7 rounded-full border border-orange-300 text-orange-600 disabled:opacity-30 disabled:cursor-not-allowed leading-none">+</button>
+              </div>
+            </div>
+          </div>
+          <p class="text-xs text-gray-400 mt-1.5">Seleccionadas: {{ (seleccionMulti[gi] || []).length }} / {{ grupo.max }}</p>
+        </div>
+
+        <hr v-if="(gruposRadio.length || gruposMulti.length) && gruposCheckbox.length" class="my-4 border-gray-100" />
+
+        <!-- Opcionales (checkbox simple) -->
         <div v-if="gruposCheckbox.length" class="mb-5">
           <p class="text-sm font-bold text-gray-700 mb-2">📋 Opcionales:</p>
           <div class="space-y-1.5">
@@ -69,18 +90,22 @@ import { reactive, computed, watch } from 'vue'
 const props = defineProps({
   nombre: { type: String, required: true },
   precio: { type: [Number, String], default: 0 },
-  // grupos: [{ label, items: [{item_id, nombre, unidad, cantidad}] }] con 2+ items -> radio
-  // grupos con exactamente 1 item -> se muestran como checkbox opcional (ver agruparElegibles)
+  // grupos: [{ label, items: [{item_id, nombre, unidad, cantidad}], min, max }]
+  // max === 1 && items.length > 1 -> radio (elige exactamente 1)
+  // max === 1 && items.length === 1 -> checkbox opcional único
+  // max > 1 -> checkboxes múltiples, tope max, mínimo min al confirmar
   grupos: { type: Array, required: true },
   fijos: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['confirmar', 'cancelar'])
 
-const gruposRadio = computed(() => props.grupos.filter((g) => g.items.length > 1))
-const gruposCheckbox = computed(() => props.grupos.filter((g) => g.items.length === 1).map((g) => g.items[0]))
+const gruposRadio = computed(() => props.grupos.filter((g) => (g.max ?? 1) === 1 && g.items.length > 1))
+const gruposCheckbox = computed(() => props.grupos.filter((g) => (g.max ?? 1) === 1 && g.items.length === 1).map((g) => g.items[0]))
+const gruposMulti = computed(() => props.grupos.filter((g) => (g.max ?? 1) > 1))
 
 const seleccionRadio = reactive({})
 const seleccionCheckbox = reactive({})
+const seleccionMulti = reactive({})
 
 function inicializar() {
   gruposRadio.value.forEach((g, gi) => {
@@ -89,8 +114,36 @@ function inicializar() {
   gruposCheckbox.value.forEach((it) => {
     seleccionCheckbox[it.item_id] = true // opcionales vienen marcados por defecto
   })
+  gruposMulti.value.forEach((g, gi) => {
+    seleccionMulti[gi] = []
+  })
 }
 watch(() => props.grupos, inicializar, { immediate: true })
+
+// A diferencia de gruposRadio/gruposCheckbox, seleccionMulti[gi] es una lista
+// que puede tener el mismo item_id repetido (p.ej. 2x Arroz) - cada repetición
+// cuenta contra el máximo del grupo igual que una opción distinta.
+function cantidadDeItemMulti(gi, item) {
+  return (seleccionMulti[gi] || []).filter((it) => it.item_id === item.item_id).length
+}
+
+function incrementarMulti(gi, grupo, item) {
+  const actuales = seleccionMulti[gi] || []
+  if (actuales.length >= grupo.max) {
+    alert(`${grupo.label}: máximo ${grupo.max} opciones`)
+    return
+  }
+  seleccionMulti[gi] = [...actuales, item]
+}
+
+function decrementarMulti(gi, item) {
+  const actuales = seleccionMulti[gi] || []
+  const idx = actuales.findIndex((it) => it.item_id === item.item_id)
+  if (idx === -1) return
+  const copia = [...actuales]
+  copia.splice(idx, 1)
+  seleccionMulti[gi] = copia
+}
 
 function confirmar() {
   const seleccionados = []
@@ -101,6 +154,14 @@ function confirmar() {
   gruposCheckbox.value.forEach((it) => {
     if (seleccionCheckbox[it.item_id]) seleccionados.push(it)
   })
+  for (const [gi, grupo] of gruposMulti.value.entries()) {
+    const elegidos = seleccionMulti[gi] || []
+    if (elegidos.length < grupo.min) {
+      alert(`${grupo.label}: debes elegir mín. ${grupo.min} opción(es)`)
+      return
+    }
+    seleccionados.push(...elegidos)
+  }
   emit('confirmar', seleccionados)
 }
 </script>

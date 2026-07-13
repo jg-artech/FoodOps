@@ -48,6 +48,8 @@ def _producto_dict(session, producto: ProductoMenu) -> dict:
                 "elegible": c.elegible,
                 "grupo_elegible": c.grupo_elegible,
                 "nombre_grupo": c.nombre_grupo,
+                "cantidad_elegible_minima": c.cantidad_elegible_minima,
+                "cantidad_elegible_maxima": c.cantidad_elegible_maxima,
             }
             for c, item in filas
         ],
@@ -73,19 +75,20 @@ def _validar_items_inventario(session, componentes) -> None:
 
 def _validar_grupos(componentes) -> None:
     """Un mismo número de grupo_elegible dentro del producto debe tener siempre
-    el mismo nombre_grupo (evita, p.ej., dos componentes en grupo=1 con labels
-    distintos por error de UI)."""
-    nombres_por_grupo: dict = {}
+    el mismo nombre_grupo y el mismo min/máx elegible (evita, p.ej., dos
+    componentes en grupo=1 con labels o reglas distintas por error de UI)."""
+    specs_por_grupo: dict = {}
     for c in componentes:
         if c.grupo_elegible is None:
             continue
-        previo = nombres_por_grupo.setdefault(c.grupo_elegible, c.nombre_grupo)
-        if previo != c.nombre_grupo:
+        spec = (c.nombre_grupo, c.cantidad_elegible_minima, c.cantidad_elegible_maxima)
+        previo = specs_por_grupo.setdefault(c.grupo_elegible, spec)
+        if previo != spec:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"Grupo {c.grupo_elegible} tiene nombres inconsistentes: "
-                    f"'{previo}' vs '{c.nombre_grupo}'"
+                    f"Grupo {c.grupo_elegible} tiene configuración inconsistente: "
+                    f"nombre/min/máx {previo} vs {spec}"
                 ),
             )
 
@@ -143,6 +146,8 @@ def crear_producto_config(
                     elegible=c.elegible,
                     grupo_elegible=c.grupo_elegible,
                     nombre_grupo=c.nombre_grupo,
+                    cantidad_elegible_minima=c.cantidad_elegible_minima,
+                    cantidad_elegible_maxima=c.cantidad_elegible_maxima,
                 )
             )
 
@@ -203,6 +208,8 @@ def actualizar_producto_config(
                     elegible=c.elegible,
                     grupo_elegible=c.grupo_elegible,
                     nombre_grupo=c.nombre_grupo,
+                    cantidad_elegible_minima=c.cantidad_elegible_minima,
+                    cantidad_elegible_maxima=c.cantidad_elegible_maxima,
                 )
             )
 
