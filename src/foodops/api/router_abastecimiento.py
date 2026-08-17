@@ -16,13 +16,14 @@ from sqlalchemy.orm import sessionmaker
 from foodops.core.audit import registrar_auditoria
 from foodops.core.auth import TokenData, get_current_user, requiere_rol
 from foodops.core.config import settings
-from foodops.db.models import PuntoVenta
+from foodops.db.models import Orden, PuntoVenta, Usuario
 from foodops.db.models_caja import ItemInventario
 from foodops.db.models_stock import (
     PedidoReabastecimiento,
     PedidoReabastecimientoItem,
     ReglaReabastecimiento,
 )
+from foodops.domain.schemas import PuntoVentaCreate, PuntoVentaUpdate
 from foodops.domain.schemas_stock import (
     PedidoAbastecimientoCrearRequest,
     ReglaReabastecimientoCreate,
@@ -471,10 +472,14 @@ def eliminar_regla_reabastecimiento(
 
 
 # ---------------------------------------------------------------------------
-# Puntos de venta (no existía un endpoint dedicado - lo necesita el selector
-# de tienda del formulario de reglas; abierto a cualquier usuario autenticado,
-# mismo criterio que /api/inventario/items)
+# Puntos de venta (CRUD completo - lectura abierta a cualquier usuario
+# autenticado, igual que /api/inventario/items; crear/editar/eliminar
+# restringido a gerencia, mismo criterio que reglas de reabastecimiento)
 # ---------------------------------------------------------------------------
+
+
+def _punto_venta_dict(p: PuntoVenta) -> dict:
+    return {"id": p.id, "nombre": p.nombre, "direccion": p.direccion, "telefono": p.telefono}
 
 
 @router.get("/puntos-venta")
@@ -484,6 +489,150 @@ def listar_puntos_venta(current_user: TokenData = Depends(get_current_user)):
         puntos = session.execute(
             select(PuntoVenta).where(PuntoVenta.activo.is_(True)).order_by(PuntoVenta.id)
         ).scalars().all()
-        return [{"id": p.id, "nombre": p.nombre} for p in puntos]
+        return [_punto_venta_dict(p) for p in puntos]
+    finally:
+        session.close()
+
+
+@router.post("/puntos-venta", status_code=201)
+def crear_punto_venta(
+    body: PuntoVentaCreate,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_GERENCIA)),
+):
+    session = Session()
+    try:
+        usuario = session.get(Usuario, current_user.user_id)
+        if not usuario:
+            raise HTTPException(status_code=400, detail="Usuario no encontrado")
+
+        duplicado = session.execute(
+            select(PuntoVenta).where(
+                PuntoVenta.empresa_id == usuario.empresa_id,
+                PuntoVenta.activo.is_(True),
+                PuntoVenta.nombre == body.nombre,
+            )
+        ).scalars().first()
+        if duplicado:
+            raise HTTPException(status_code=400, detail="Ya existe una tienda con ese nombre")
+
+        punto = PuntoVenta(
+            empresa_id=usuario.empresa_id,
+            nombre=body.nombre,
+            direccion=body.direccion,
+            telefono=body.telefono,
+        )
+        session.add(punto)
+        session.flush()
+
+        registrar_auditoria(
+            session,
+            accion="CREAR_PUNTO_VENTA",
+            entidad="punto_venta",
+            entidad_id=punto.id,
+            usuario_id=current_user.user_id,
+            punto_id=punto.id,
+            detalle={"nombre": punto.nombre},
+        )
+        session.commit()
+        return _punto_venta_dict(punto)
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+@router.patch("/puntos-venta/{punto_id}")
+def actualizar_punto_venta(
+    punto_id: int,
+    body: PuntoVentaUpdate,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_GERENCIA)),
+):
+    session = Session()
+    try:
+        punto = session.get(PuntoVenta, punto_id)
+        if not punto or not punto.activo:
+            raise HTTPException(status_code=404, detail="Punto de venta no encontrado")
+
+        cambios = body.model_dump(exclude_unset=True)
+        nuevo_nombre = cambios.get("nombre")
+        if nuevo_nombre:
+            duplicado = session.execute(
+                select(PuntoVenta).where(
+                    PuntoVenta.empresa_id == punto.empresa_id,
+                    PuntoVenta.activo.is_(True),
+                    PuntoVenta.nombre == nuevo_nombre,
+                    PuntoVenta.id != punto_id,
+                )
+            ).scalars().first()
+            if duplicado:
+                raise HTTPException(status_code=400, detail="Ya existe una tienda con ese nombre")
+
+        for campo, valor in cambios.items():
+            setattr(punto, campo, valor)
+
+        registrar_auditoria(
+            session,
+            accion="ACTUALIZAR_PUNTO_VENTA",
+            entidad="punto_venta",
+            entidad_id=punto.id,
+            usuario_id=current_user.user_id,
+            punto_id=punto.id,
+            detalle=cambios,
+        )
+        session.commit()
+        return _punto_venta_dict(punto)
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+@router.delete("/puntos-venta/{punto_id}", status_code=204)
+def eliminar_punto_venta(
+    punto_id: int,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_GERENCIA)),
+):
+    session = Session()
+    try:
+        punto = session.get(PuntoVenta, punto_id)
+        if not punto or not punto.activo:
+            raise HTTPException(status_code=404, detail="Punto de venta no encontrado")
+
+        tiene_usuarios = session.execute(
+            select(Usuario.id).where(Usuario.punto_id == punto_id, Usuario.activo.is_(True))
+        ).first()
+        tiene_ordenes = session.execute(
+            select(Orden.id).where(Orden.punto_id == punto_id)
+        ).first()
+        if tiene_usuarios or tiene_ordenes:
+            raise HTTPException(status_code=400, detail="No se puede eliminar, tienda en uso")
+
+        punto.activo = False
+
+        registrar_auditoria(
+            session,
+            accion="ELIMINAR_PUNTO_VENTA",
+            entidad="punto_venta",
+            entidad_id=punto.id,
+            usuario_id=current_user.user_id,
+            punto_id=punto.id,
+            detalle={"nombre": punto.nombre},
+        )
+        session.commit()
+        return None
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
     finally:
         session.close()

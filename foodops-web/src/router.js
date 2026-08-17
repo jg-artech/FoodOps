@@ -19,6 +19,7 @@ import PedidosReabastecimientoView from '@/views/PedidosReabastecimientoView.vue
 import AbastecimientoView from '@/views/AbastecimientoView.vue'
 import InventarioDiarioView from '@/views/InventarioDiarioView.vue'
 import ReglasReabastecimientoView from '@/views/ReglasReabastecimientoView.vue'
+import PuntosVentaView from '@/views/PuntosVentaView.vue'
 
 
 const routes = [
@@ -43,6 +44,7 @@ const routes = [
   { path: '/central', redirect: '/central/abastecimiento' },
   { path: '/central/abastecimiento', component: AbastecimientoView, meta: { requiresAuth: true } },
   { path: '/central/reglas', component: ReglasReabastecimientoView, meta: { requiresAuth: true } },
+  { path: '/central/puntos', component: PuntosVentaView, meta: { requiresAuth: true } },
   { path: '/pos/inventario-diario', component: InventarioDiarioView, meta: { requiresAuth: true } },
 ]
 

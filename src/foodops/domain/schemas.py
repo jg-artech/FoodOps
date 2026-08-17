@@ -33,6 +33,18 @@ class UsuarioResponse(BaseModel):
         from_attributes = True
 
 
+class PuntoVentaCreate(BaseModel):
+    nombre: NombreStr
+    direccion: Optional[DireccionStr] = None
+    telefono: Optional[TelefonoStr] = None
+
+
+class PuntoVentaUpdate(BaseModel):
+    nombre: Optional[NombreStr] = None
+    direccion: Optional[DireccionStr] = None
+    telefono: Optional[TelefonoStr] = None
+
+
 class LoginRequest(BaseModel):
     username: Annotated[str, Field(max_length=100)]
     password: Annotated[str, Field(max_length=128)]
