@@ -14,6 +14,10 @@ asyncpg==0.29.0
 # Authentication
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+# bcrypt>=4.1 eliminó el atributo __about__ que passlib 1.7.4 usa para
+# detectar el backend -> AttributeError en cada verify_password(). Pin
+# explícito para no depender de qué versión resuelva pip por defecto.
+bcrypt==4.0.1
 python-multipart==0.0.6
 PyJWT==2.13.0
 

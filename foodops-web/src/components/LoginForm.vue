@@ -10,6 +10,9 @@
         type="text"
         required
         autocomplete="username"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
         placeholder="usuario"
         class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-400"
       />
@@ -72,6 +75,8 @@ async function handleSubmit() {
   } catch (e) {
     if (!navigator.onLine) {
       error.value = 'Sin conexión a internet. Intenta cuando tengas red.'
+    } else if (!e.response) {
+      error.value = 'No se pudo conectar con el servidor. Intenta de nuevo.'
     } else {
       error.value = e.response?.data?.detail || 'Usuario o contraseña incorrectos'
     }
