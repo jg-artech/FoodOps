@@ -3,7 +3,7 @@
 from decimal import Decimal
 from typing import Annotated, List, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from foodops.db.models import MetodoPago, OrdenEstado, TipoVenta
 
@@ -48,6 +48,11 @@ class PuntoVentaUpdate(BaseModel):
 class LoginRequest(BaseModel):
     username: Annotated[str, Field(max_length=100)]
     password: Annotated[str, Field(max_length=128)]
+
+    @field_validator("username")
+    @classmethod
+    def _trim_username(cls, v: str) -> str:
+        return v.strip()
 
 
 class TokenResponse(BaseModel):
