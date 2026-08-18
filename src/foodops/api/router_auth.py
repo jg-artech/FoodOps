@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
@@ -43,7 +43,7 @@ def login(request: Request, body: LoginRequest):
     )
     client_ip = request.client.host if request.client else None
     try:
-        stmt = select(Usuario).where(Usuario.username == body.username)
+        stmt = select(Usuario).where(func.lower(Usuario.username) == body.username.lower())
         usuario = session.execute(stmt).scalars().first()
 
         if not usuario:
