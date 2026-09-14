@@ -52,10 +52,10 @@ class LoginRequest(BaseModel):
     @field_validator("username")
     @classmethod
     def _trim_username(cls, v: str) -> str:
-<<<<<<< HEAD
+
         # Autocomplete/teclados móviles a veces agregan espacio final
-=======
->>>>>>> 9cdd3ccf13e225facf8691139d1fa2ee8e0544f8
+
+
         return v.strip()
 
 
