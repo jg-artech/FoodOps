@@ -43,11 +43,14 @@ def login(request: Request, body: LoginRequest):
     )
     client_ip = request.client.host if request.client else None
     try:
+<<<<<<< HEAD
         # Case-insensitive: teclados móviles auto-capitalizan la primera letra
         # de inputs de texto salvo que el HTML lo desactive explícitamente, y
         # no todos los teclados/webviews lo respetan - comparar exacto rompía
         # el login desde celular con las mismas credenciales que sí funcionan
         # en PC (usuario quedaba "Admin" en vez de "admin").
+=======
+>>>>>>> 9cdd3ccf13e225facf8691139d1fa2ee8e0544f8
         stmt = select(Usuario).where(func.lower(Usuario.username) == body.username.lower())
         usuario = session.execute(stmt).scalars().first()
 
