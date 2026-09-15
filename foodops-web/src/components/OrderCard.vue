@@ -40,6 +40,13 @@
     <div class="flex items-center justify-between mt-auto">
       <span class="font-bold text-orange-500">Q{{ orden.total.toFixed(2) }}</span>
       <div class="flex gap-2">
+        <button
+          @click="imprimirTicket(orden)"
+          title="Reimprimir ticket"
+          class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded font-medium"
+        >
+          🖨️
+        </button>
         <slot name="acciones" />
       </div>
     </div>
@@ -49,6 +56,7 @@
 <script setup>
 import { computed } from 'vue'
 import { getMenu } from '@/data/menu.js'
+import { imprimirTicket } from '@/utils/ticket.js'
 
 const props = defineProps({
   orden: { type: Object, required: true },

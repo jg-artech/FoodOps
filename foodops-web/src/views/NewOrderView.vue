@@ -242,6 +242,9 @@
       <p v-else class="text-gray-500 mb-5">Total: <strong>Q{{ totalPrecio.toFixed(2) }}</strong></p>
 
       <div class="flex flex-col gap-3">
+        <button @click="imprimirTicket" class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-4 rounded-xl text-lg flex items-center justify-center gap-2">
+          🖨️ Imprimir ticket
+        </button>
         <button @click="resetOrden" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-4 rounded-xl text-lg">
           🍗 Nueva Orden
         </button>
@@ -284,6 +287,7 @@ import { getMenu, getCategorias } from '@/data/menu.js'
 import PiezaModal from '@/components/PiezaModal.vue'
 import SelectorComponentesModal from '@/components/SelectorComponentesModal.vue'
 import api from '@/services/api'
+import { imprimirTicket as imprimirTicketOrden } from '@/utils/ticket.js'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -645,6 +649,15 @@ async function confirmarOrden() {
   } finally {
     loading.value = false
   }
+}
+
+// Impresión de ticket (impresora térmica angosta, máx. 7cm de ancho) — lógica
+// compartida con OrdenList.vue (reimprimir) en src/utils/ticket.js. ordenCreada
+// ya viene con la forma completa que devuelve el backend (items, cliente,
+// método de pago, tomada_por_nombre, notas_especiales...), así que no hace
+// falta reconstruir nada a partir de cart/form.
+function imprimirTicket() {
+  imprimirTicketOrden(ordenCreada.value)
 }
 
 function resetOrden() {

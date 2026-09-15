@@ -12,12 +12,21 @@
           <p class="font-semibold text-gray-800">{{ orden.numero_orden }}</p>
           <p class="text-sm text-gray-500">{{ orden.cliente_nombre || 'Sin nombre' }}</p>
         </div>
-        <div class="text-right">
-          <span
-            class="text-xs font-medium px-2 py-1 rounded-full"
-            :class="estadoClase(orden.estado)"
-          >{{ orden.estado }}</span>
-          <p class="text-sm font-semibold mt-1">${{ orden.total.toFixed(2) }}</p>
+        <div class="flex items-center gap-3">
+          <div class="text-right">
+            <span
+              class="text-xs font-medium px-2 py-1 rounded-full"
+              :class="estadoClase(orden.estado)"
+            >{{ orden.estado }}</span>
+            <p class="text-sm font-semibold mt-1">${{ orden.total.toFixed(2) }}</p>
+          </div>
+          <button
+            @click="imprimirTicket(orden)"
+            title="Reimprimir ticket"
+            class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1.5 rounded-lg font-medium shrink-0"
+          >
+            🖨️
+          </button>
         </div>
       </div>
     </div>
@@ -25,6 +34,8 @@
 </template>
 
 <script setup>
+import { imprimirTicket } from '@/utils/ticket.js'
+
 defineProps({
   ordenes: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },

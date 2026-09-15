@@ -11,36 +11,34 @@
       </span>
     </div>
 
-    <!-- Items con contenido de combos -->
+    <!-- Items con detalle de componentes, estilo comanda impresa: cada línea con su cantidad -->
     <div class="px-4 py-2 flex-1">
       <p class="text-xs font-bold uppercase tracking-wider opacity-60 mb-2">Productos</p>
-      <ul class="space-y-2">
-        <li v-for="item in orden.items" :key="item.producto">
-          <div class="flex gap-2 items-start">
+      <ul class="space-y-3">
+        <li v-for="(item, idx) in orden.items" :key="idx">
+          <div class="flex gap-2 items-baseline">
             <span class="font-black text-lg leading-tight shrink-0">{{ item.cantidad }}×</span>
             <span class="font-semibold text-base leading-snug">{{ desglosar(item.producto).base }}</span>
           </div>
-          <div v-if="desglosar(item.producto).extras.length" class="ml-6 mt-1 flex flex-wrap gap-1">
-            <span v-for="(ex, i) in desglosar(item.producto).extras" :key="'ex' + i"
-              class="text-xs font-medium bg-white/10 border border-white/20 rounded-full px-2 py-0.5">
-              🧂 {{ ex }}
-            </span>
-          </div>
-          <div v-if="fijosDe(item.producto).length" class="ml-6 mt-1 flex flex-wrap gap-1">
-            <span v-for="(fj, i) in fijosDe(item.producto)" :key="'fj' + i"
-              class="text-xs font-medium bg-white/5 border border-white/10 opacity-80 rounded-full px-2 py-0.5">
-              ✓ {{ fj }}
-            </span>
-          </div>
-          <p v-else-if="!desglosar(item.producto).extras.length && getContenido(item.producto)"
+          <ul v-if="componentesDe(item).length" class="ml-6 mt-1 space-y-0.5">
+            <li v-for="(comp, i) in componentesDe(item)" :key="i"
+              class="flex gap-2 items-baseline text-sm leading-snug">
+              <span class="font-bold opacity-80 tabular-nums shrink-0 w-5 text-right">{{ comp.cantidad }}</span>
+              <span :class="comp.elegible ? 'font-medium' : 'opacity-70'">{{ comp.nombre }}</span>
+            </li>
+          </ul>
+          <p v-else-if="getContenido(item.producto)"
             class="text-xs opacity-70 ml-6 mt-0.5 leading-relaxed border-l-2 border-white/20 pl-2">
             {{ getContenido(item.producto) }}
+          </p>
+          <p v-if="item.especiales" class="ml-6 mt-1 text-xs font-semibold text-yellow-300">
+            🧂 {{ item.especiales }}
           </p>
         </li>
       </ul>
     </div>
 
-    <!-- Cliente -->
+    <!-- Cliente + quién tomó la orden -->
     <div class="px-4 py-2 border-t border-white/20 text-sm">
       <p>
         <span v-if="orden.es_domicilio">🏠 Domicilio — <strong>{{ orden.cliente_nombre }}</strong></span>
@@ -48,6 +46,7 @@
       </p>
       <p v-if="orden.cliente_telefono" class="opacity-70 text-xs mt-0.5">📱 {{ orden.cliente_telefono }}</p>
       <p v-if="orden.cliente_direccion" class="opacity-70 text-xs">📍 {{ orden.cliente_direccion }}</p>
+      <p v-if="orden.tomada_por_nombre" class="opacity-70 text-xs mt-0.5">🧑‍💼 Tomó la orden: <strong class="opacity-100">{{ orden.tomada_por_nombre }}</strong></p>
     </div>
 
     <!-- ⚠️ Requerimientos especiales — DESTACADOS -->
@@ -94,7 +93,8 @@ function getContenido(nombreProducto) {
 // Componentes FIJOS (elegible=false) de la receta real del producto — el pollo,
 // las salsas, el jalapeño, la Pepsi, etc. que nunca aparecen en item.producto
 // porque no son una elección del cliente, pero cocina/empaque igual necesita
-// verlos para preparar la orden completa.
+// verlos para preparar la orden completa. Devuelve {nombre, cantidad} con la
+// cantidad POR UNIDAD del producto (aún sin multiplicar por lo pedido en la línea).
 const cacheFijos = new Map()
 function fijosDe(nombreCompleto) {
   const base = desglosar(nombreCompleto).base
@@ -102,7 +102,7 @@ function fijosDe(nombreCompleto) {
   const menuItem = menuItems.find((m) => base === m.nombre)
   const receta = menuItem ? props.recetas[menuItem.id] : null
   if (!receta) return [] // recetas aún no cargó (o no existe) - no memorizar, reintentar en el próximo render
-  const resultado = receta.filter((c) => !c.elegible).map((c) => c.nombre)
+  const resultado = receta.filter((c) => !c.elegible).map((c) => ({ nombre: c.nombre, cantidad: c.cantidad }))
   cacheFijos.set(base, resultado)
   return resultado
 }
@@ -111,7 +111,9 @@ function fijosDe(nombreCompleto) {
 // (porción), Ensalada Rusa (porción))". Lo separamos aquí para mostrar el nombre
 // del producto y cada elección como una etiqueta aparte, en vez de un párrafo
 // corrido. Los "(porción)"/"(unidad)" de cada item de inventario se recortan por
-// ser ruido para cocina (ya se entiende que es una porción).
+// ser ruido para cocina (ya se entiende que es una porción). El prefijo "Nx " que
+// agrega NewOrderView cuando el cliente repite la misma elección (p.ej. "2x Arroz
+// con Verduras") se separa como cantidad por unidad del producto.
 const cacheDesglose = new Map()
 function desglosar(nombreCompleto) {
   if (cacheDesglose.has(nombreCompleto)) return cacheDesglose.get(nombreCompleto)
@@ -119,11 +121,36 @@ function desglosar(nombreCompleto) {
   const resultado = match
     ? {
         base: match[1],
-        extras: match[2].split(', ').map((ex) => ex.replace(/\s*\([^)]*\)\s*$/, '').trim()),
+        extras: match[2].split(', ').map((ex) => {
+          const limpio = ex.replace(/\s*\([^)]*\)\s*$/, '').trim()
+          const conCantidad = limpio.match(/^(\d+)x\s+(.+)$/)
+          return conCantidad
+            ? { nombre: conCantidad[2], cantidad: parseInt(conCantidad[1], 10) }
+            : { nombre: limpio, cantidad: 1 }
+        }),
       }
     : { base: nombreCompleto, extras: [] }
   cacheDesglose.set(nombreCompleto, resultado)
   return resultado
+}
+
+// Formatea cantidades: enteros sin decimales, fraccionarias con máx. 2 decimales
+// sin ceros de sobra (p.ej. 1.5 en vez de 1.50, 1 en vez de 1.00).
+function formatCantidad(n) {
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
+}
+
+// Lista unificada de componentes a preparar para un item de la orden (fijos +
+// elegidos), con la cantidad TOTAL de la línea (cantidad por unidad del producto
+// × cuántas unidades de ese producto se pidieron) — lo que cocina realmente
+// necesita saber para preparar toda la línea, no solo una unidad.
+function componentesDe(item) {
+  const { extras } = desglosar(item.producto)
+  const fijos = fijosDe(item.producto)
+  return [
+    ...fijos.map((f) => ({ nombre: f.nombre, cantidad: formatCantidad(f.cantidad * item.cantidad), elegible: false })),
+    ...extras.map((e) => ({ nombre: e.nombre, cantidad: formatCantidad(e.cantidad * item.cantidad), elegible: true })),
+  ]
 }
 
 // El backend guarda en UTC sin 'Z' — agregamos 'Z' para parsear correctamente

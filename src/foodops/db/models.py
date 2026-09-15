@@ -105,6 +105,7 @@ class Orden(Base):
 
     punto = relationship("PuntoVenta", back_populates="ordenes")
     items = relationship("OrdenItem", back_populates="orden")
+    tomada_por_usuario = relationship("Usuario", foreign_keys=[tomada_por])
 
 class OrdenItem(Base):
     __tablename__ = "orden_items"
