@@ -18,6 +18,7 @@ from foodops.db.models import (
     OrdenItem,
     TransaccionVenta,
     TipoVenta,
+    Usuario,
 )
 from foodops.db.models_stock import ProductoComponente, ProductoMenu, TransaccionComponente
 from foodops.domain.schemas import CrearTransaccionRequest, OrdenCreate
@@ -30,7 +31,7 @@ engine = create_engine(settings.DATABASE_SYNC_URL)
 Session = sessionmaker(bind=engine)
 
 
-def _orden_dict(o, items):
+def _orden_dict(o, items, tomada_por_nombre=None):
     return {
         "id": o.id,
         "numero_orden": o.numero_orden,
@@ -40,10 +41,13 @@ def _orden_dict(o, items):
         "cliente_telefono": o.cliente_telefono,
         "cliente_direccion": o.cliente_direccion,
         "es_domicilio": o.es_domicilio,
+        "notas_especiales": o.notas_especiales,
         "metodo_pago": o.metodo_pago.value if o.metodo_pago else None,
         "dinero_recibido": float(o.dinero_recibido) if o.dinero_recibido else None,
         "vuelto": float(o.vuelto) if o.vuelto else None,
         "created_at": str(o.created_at),
+        "tomada_por": o.tomada_por,
+        "tomada_por_nombre": tomada_por_nombre,
         "items": [
             {
                 "producto": i.producto,
@@ -112,7 +116,7 @@ def crear_orden(
             detalle={"numero_orden": numero_orden, "total": total},
         )
         session.commit()
-        return _orden_dict(nueva_orden, items_creados)
+        return _orden_dict(nueva_orden, items_creados, tomada_por_nombre=current_user.username)
     except HTTPException:
         raise
     except Exception as e:
@@ -145,12 +149,21 @@ def listar_ordenes(
             .where(Orden.punto_id == effective_punto_id)
             .order_by(Orden.created_at.desc())
         ).scalars().all()
+
+        usuario_ids = {o.tomada_por for o in ordenes if o.tomada_por}
+        nombres_por_usuario = {}
+        if usuario_ids:
+            usuarios = session.execute(
+                select(Usuario).where(Usuario.id.in_(usuario_ids))
+            ).scalars().all()
+            nombres_por_usuario = {u.id: (u.nombre_completo or u.username) for u in usuarios}
+
         result = []
         for o in ordenes:
             items = session.execute(
                 select(OrdenItem).where(OrdenItem.orden_id == o.id)
             ).scalars().all()
-            result.append(_orden_dict(o, items))
+            result.append(_orden_dict(o, items, tomada_por_nombre=nombres_por_usuario.get(o.tomada_por)))
         return result
     finally:
         session.close()
