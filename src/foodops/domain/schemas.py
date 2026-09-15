@@ -8,7 +8,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from foodops.db.models import MetodoPago, OrdenEstado, TipoVenta
 
 # Reusable annotated types
-NombreStr = Annotated[str, Field(max_length=100)]
+NombreStr = Annotated[str, Field(max_length=200)]
 TelefonoStr = Annotated[str, Field(max_length=20)]
 DireccionStr = Annotated[str, Field(max_length=200)]
 RequerimientosStr = Annotated[str, Field(max_length=500)]
@@ -17,7 +17,7 @@ Cantidad = Annotated[int, Field(ge=1, le=999)]
 
 
 class UsuarioCreate(BaseModel):
-    username: Annotated[str, Field(max_length=100)]
+    username: Annotated[str, Field(max_length=200)]
     email: EmailStr
     password: Annotated[str, Field(min_length=8, max_length=128)]
     nombre_completo: NombreStr
@@ -46,12 +46,16 @@ class PuntoVentaUpdate(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: Annotated[str, Field(max_length=100)]
+    username: Annotated[str, Field(max_length=200)]
     password: Annotated[str, Field(max_length=128)]
 
     @field_validator("username")
     @classmethod
     def _trim_username(cls, v: str) -> str:
+
+        # Autocomplete/teclados móviles a veces agregan espacio final
+
+
         return v.strip()
 
 
@@ -61,7 +65,7 @@ class TokenResponse(BaseModel):
 
 
 class OrdenItemCreate(BaseModel):
-    producto: Annotated[str, Field(max_length=100)]
+    producto: Annotated[str, Field(max_length=200)]
     cantidad: Cantidad
     precio_unitario: Precio
     especiales: Optional[RequerimientosStr] = None
@@ -91,7 +95,7 @@ class OrdenResponse(BaseModel):
 
 
 class ItemTransaccion(BaseModel):
-    nombre: Annotated[str, Field(max_length=100)]
+    nombre: Annotated[str, Field(max_length=200)]
     cantidad: Annotated[float, Field(ge=0)]
     unidad: str = "pieza"
     precio_unitario: Annotated[float, Field(ge=0)]
