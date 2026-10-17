@@ -90,7 +90,9 @@ def crear_orden(
     session = Session()
     try:
         punto_id = exigir_punto_propio(current_user)
-        numero_orden = f"ORD-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        # La tienda va en el número: con 3 tiendas vendiendo a la vez, un
+        # sello de segundos no basta para que el número del ticket sea único.
+        numero_orden = f"ORD-{punto_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
         # Total calculated server-side from item quantities; subtotals are recalculated too
         total = sum(
             item.cantidad * float(item.precio_unitario) for item in orden.items
