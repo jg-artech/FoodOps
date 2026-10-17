@@ -37,6 +37,19 @@ router = APIRouter(prefix="/api/ordenes", tags=["ordenes"])
 engine = create_engine(settings.DATABASE_SYNC_URL)
 Session = sessionmaker(bind=engine)
 
+# Roles que operan órdenes dentro de una tienda (POS, cocina, reparto).
+# gerente_central queda fuera a propósito: su ámbito es el abastecimiento
+# entre tiendas, no el mostrador ni la cocina.
+_ROLES_OPERACION = (
+    "tomador_orden",
+    "cocinero",
+    "repartidor",
+    "resp_tienda",
+    "gerente_punto",
+    "gerente_general",
+    "admin",
+)
+
 
 def _orden_dict(o, items, tomada_por_nombre=None):
     return {
@@ -71,11 +84,12 @@ def _orden_dict(o, items, tomada_por_nombre=None):
 @router.post("/")
 def crear_orden(
     orden: OrdenCreate,
-    current_user: TokenData = Depends(get_current_user),
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_OPERACION)),
 ):
     """Crear nueva orden. punto_id y tomada_por vienen del token, nunca del cliente."""
     session = Session()
     try:
+        punto_id = exigir_punto_propio(current_user)
         numero_orden = f"ORD-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
         # Total calculated server-side from item quantities; subtotals are recalculated too
         total = sum(
@@ -83,7 +97,7 @@ def crear_orden(
         ) if orden.items else 0.0
 
         nueva_orden = Orden(
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             numero_orden=numero_orden,
             cliente_nombre=orden.cliente_nombre,
             cliente_telefono=orden.cliente_telefono,
@@ -175,14 +189,15 @@ def listar_ordenes(
 def actualizar_estado_orden(
     orden_id: int,
     data: dict,
-    current_user: TokenData = Depends(get_current_user),
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_OPERACION)),
 ):
-    """Actualizar estado de una orden."""
+    """Actualizar estado de una orden (solo de la tienda del usuario)."""
     session = Session()
     try:
         orden = session.get(Orden, orden_id)
         if not orden:
             raise HTTPException(status_code=404, detail="Orden no encontrada")
+        exigir_acceso_a_punto(current_user, orden.punto_id)
         nuevo_estado = data.get("estado")
         orden.estado = OrdenEstado(nuevo_estado)
 
@@ -362,13 +377,23 @@ def _registrar_componentes_transaccion(session, transaccion_id: int, items) -> N
 @router.post("/transacciones/")
 def crear_transaccion(
     req: CrearTransaccionRequest,
-    current_user: TokenData = Depends(get_current_user),
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_OPERACION)),
 ):
     """Registrar transacción financiera con datos de costo y margen."""
     session = Session()
     try:
+        punto_id = exigir_punto_propio(current_user)
+        # orden_id viene del cliente: sin esto se podría colgar una venta de
+        # esta tienda de una orden de otra.
+        if req.orden_id is not None:
+            orden = session.get(Orden, req.orden_id)
+            if orden is None:
+                raise HTTPException(status_code=404, detail="Orden no encontrada")
+            if orden.punto_id != punto_id:
+                raise HTTPException(status_code=403, detail="Esa orden pertenece a otra tienda")
+
         t = TransaccionVenta(
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             orden_id=req.orden_id,
             tipo_venta=TipoVenta(req.tipo_venta),
             nombre_iniciativa=req.nombre_iniciativa,
