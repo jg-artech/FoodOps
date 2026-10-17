@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 
 from foodops.core.auth import create_access_token, hash_password
 from foodops.db.models import Empresa, Orden, PuntoVenta, Usuario, UserRol
-from foodops.db.models_caja import CajaDiaria, FondoRepartidor, ItemInventario
+from foodops.db.models_caja import CajaDiaria, FondoRepartidor, Gasto, ItemInventario
 from foodops.db.models_stock import PedidoReabastecimiento, PedidoReabastecimientoItem
 
 
@@ -60,6 +60,10 @@ def datos(engine):
     resp_centro = usuario("resp_centro", UserRol.RESP_TIENDA, centro)
     resp_jordan = usuario("resp_jordan", UserRol.RESP_TIENDA, jordan)
     gerente_general = usuario("gg_test", UserRol.GERENTE_GENERAL, None)
+    # Mismo patrón que el central_test real: gerente_central con una tienda
+    # "de casa" (Centro), pero su ámbito debe ser abastecimiento, nunca el
+    # detalle de órdenes de otra tienda.
+    gerente_central = usuario("gc_test", UserRol.GERENTE_CENTRAL, centro)
     s.flush()
 
     # Una orden por tienda
@@ -109,6 +113,19 @@ def datos(engine):
     )
     s.add(fondo_jordan)
 
+    # Gasto en Jordán: para probar que el modo "todas las tiendas" de
+    # gerencia (permitir_todas=True) realmente agrega entre tiendas y no
+    # solo la propia.
+    gasto_jordan = Gasto(
+        caja_id=caja_jordan.id,
+        punto_id=jordan.id,
+        categoria="otros",
+        descripcion="Gasto de prueba en Jordán",
+        monto=15,
+        registrado_por=resp_jordan.id,
+    )
+    s.add(gasto_jordan)
+
     s.commit()
 
     def credenciales(u: Usuario) -> dict:
@@ -129,6 +146,7 @@ def datos(engine):
         "resp_centro": credenciales(resp_centro),
         "resp_jordan": credenciales(resp_jordan),
         "gerente_general": credenciales(gerente_general),
+        "gerente_central": credenciales(gerente_central),
         "orden_centro": orden_centro.id,
         "orden_jordan": orden_jordan.id,
         "pedido_jordan": pedido_jordan.id,
@@ -210,6 +228,18 @@ def test_la_orden_toma_la_tienda_del_token_y_no_la_del_body(api, datos):
 # ---------------------------------------------------------------------------
 
 
+def test_gerente_central_no_puede_leer_ordenes_de_otra_tienda(api, datos):
+    """gerente_central ve todas las tiendas para abastecimiento, pero su
+    ámbito no incluye el detalle de órdenes de otra tienda (así se acordó:
+    "gerente_central queda solo con abastecimiento"). Antes de este caso,
+    resolver_punto_id trataba a cualquier rol de ROLES_MULTI_TIENDA como
+    "ve todas" también aquí, y colaba el cruce."""
+    r = api.get(
+        "/api/ordenes/", params={"punto_id": datos["jordan"]}, headers=_auth(datos["gerente_central"])
+    )
+    assert r.status_code == 403
+
+
 def test_gerente_general_ve_las_ordenes_de_cualquier_tienda(api, datos):
     gg = datos["gerente_general"]
     r = api.get("/api/ordenes/", params={"punto_id": datos["jordan"]}, headers=_auth(gg))
@@ -234,6 +264,21 @@ def test_gerente_general_no_puede_leer_una_tienda_de_otra_empresa(api, datos):
 def test_gerente_general_recibe_404_si_la_tienda_no_existe(api, datos):
     r = api.get("/api/ordenes/", params={"punto_id": 999999}, headers=_auth(datos["gerente_general"]))
     assert r.status_code == 404
+
+
+def test_gerente_general_ve_gastos_de_todas_las_tiendas_sin_punto_id(api, datos):
+    """Modo "todas las tiendas" (permitir_todas=True) de /api/gastos: sin
+    punto_id debe agregar entre tiendas, con punto_nombre por fila."""
+    r = api.get("/api/gastos", headers=_auth(datos["gerente_general"]))
+    assert r.status_code == 200
+    por_tienda = {g["punto_id"]: g["punto_nombre"] for g in r.json()}
+    assert por_tienda.get(datos["jordan"]) == "Local Jordán"
+
+
+def test_responsable_de_jordan_no_ve_gastos_de_otras_tiendas(api, datos):
+    r = api.get("/api/gastos", headers=_auth(datos["resp_jordan"]))
+    assert r.status_code == 200
+    assert {g["punto_id"] for g in r.json()} == {datos["jordan"]}
 
 
 # ---------------------------------------------------------------------------
