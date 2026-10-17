@@ -482,3 +482,96 @@ sucursales. ¿Confirmas?
 - Introducir roles `VENDEDOR`/`GERENTE` (§1.2): **no**, se mapean a los existentes.
 - Validación de tienda en `get_current_user` contra BD (R7): **no** en esta
   tanda — añade una consulta por request; lo dejo anotado.
+
+---
+
+## 10. Resultado de la implementación (2026-10-17)
+
+Las decisiones de §9 se resolvieron así: **D1 = (a) catálogo global**,
+**D2 = solo fixtures de test** (la BD de desarrollo no recibió usuarios
+nuevos), **D4 = restringir** `/api/puntos-venta` a roles multitienda.
+D3 y D5 se aplicaron como estaban propuestos.
+
+### Commits
+
+| Commit | Paso |
+|---|---|
+| `d475089` | `docs:` esta auditoría |
+| `ca2f4e6` | `feat:` dependencias de alcance en `core/auth` |
+| `5ea3db0` | `fix:` validar tienda en endpoints con id de URL (R1, R2, R5, R6) |
+| `b595337` | `fix:` tienda obligatoria en el token (R3) |
+| `f8b51a6` | `feat:` alcance "todas las tiendas" + R4 |
+| `a0ff150` | `feat:` migración `010_integridad_multitienda` (R8, R9) |
+| `08a6c4d` | `test:` suite de aislamiento (R10) |
+| `2ba4ac1` | `feat(web):` selector de tienda y roles en rutas |
+| `97eb392` | `refactor:` eliminar `core/dependencies.py` (R11) |
+
+Riesgo **R7** (token que sobrevive a un cambio de tienda) queda abierto por
+decisión explícita: validarlo costaría una consulta a la BD por request.
+
+### Verificación
+
+`pytest`: **19 pasan** (7 previos + 12 nuevos de aislamiento). Se comprobó
+que los tests nuevos **fallan** al revertir la validación, no solo que pasan.
+
+Contra el backend local en 8001:
+
+| Caso | HTTP |
+|---|---|
+| vendedor de Centro lista sus órdenes | 200 (solo Centro) |
+| vendedor de Centro pide `?punto_id=8` | **403** |
+| admin pide `?punto_id=8` | 200 |
+| admin pide `?punto_id=99999` | **404** |
+| responsable de Jordán cancela una orden de Centro | **403** (la orden no cambió de estado) |
+| vendedor de Centro lista `/api/puntos-venta` | **403** |
+| admin lista `/api/puntos-venta` | 200 |
+| `/api/inventario/consumo` sin `punto_id` (admin) | 200, bloque por cada una de las 3 tiendas |
+| `/api/inventario/items` | 40 items, todos con `punto_id: null` |
+
+---
+
+## 11. Pasos manuales pendientes (los haces tú)
+
+### ⚠️ Antes de migrar producción: dos consultas de control
+
+La migración 010 **falla y hace rollback** si alguno de estos devuelve filas.
+No rompe nada, pero conviene saberlo antes de la ventana de mantenimiento.
+
+```sql
+-- 1. Usuarios con rol de tienda y sin tienda: el CHECK los rechaza.
+SELECT id, username, rol FROM usuarios
+WHERE punto_id IS NULL
+  AND rol::text NOT IN ('ADMIN', 'GERENTE_GENERAL', 'GERENTE_CENTRAL');
+
+-- 2. Números de orden repetidos dentro de una misma tienda.
+SELECT punto_id, numero_orden, count(*) FROM ordenes
+GROUP BY 1, 2 HAVING count(*) > 1;
+```
+
+En la BD local ambos devolvieron 0 filas.
+
+### Secuencia de despliegue
+
+1. **Asignar tienda a cada usuario existente** (`UPDATE usuarios SET punto_id = …`).
+   Es el paso que desbloquea la consulta 1. Un usuario con rol de tienda y sin
+   tienda **ya no podrá iniciar sesión** después de este cambio: recibe un 403
+   con el motivo, en vez de la sesión vacía de antes.
+2. Aplicar la migración: `alembic upgrade head` (009 → 010).
+3. Desplegar backend y frontend. Recordar purgar `sw.js` en Cloudflare tras
+   subir el frontend, por el service worker cacheado.
+4. **Todos los usuarios deben volver a iniciar sesión.** Los tokens vigentes
+   no llevan `empresa_id` y, aunque siguen siendo válidos, se saltan la
+   validación de empresa hasta que expiren.
+
+### Cambios de comportamiento que conviene avisar
+
+- Para **gerencia**, omitir `punto_id` en `/api/gastos`, `/api/desperdicios`,
+  `/api/inventario/consumo` y `/api/auth/usuarios` ahora significa **todas las
+  tiendas**, no "mi tienda". El selector de la NavBar es lo que acota.
+- Un rol de tienda que pida `?punto_id=` de otra tienda recibe **403** donde
+  antes el parámetro se ignoraba en silencio.
+- `gerente_central` ya no puede crear órdenes ni cambiar su estado: su ámbito
+  es abastecimiento. Si alguien lo estaba usando como POS, hay que darle un
+  rol de tienda.
+- Los números de orden nuevos son `ORD-{punto}-{timestamp}`. Los anteriores no
+  cambian.
