@@ -10,16 +10,19 @@ from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
 from foodops.core.auth import (
+    ROLES_MULTI_TIENDA,
     TokenData,
     create_access_token,
     get_current_user,
     oauth2_scheme,
     requiere_rol,
+    resolver_punto_id,
+    usuario_ve_todas_las_tiendas,
     verify_password,
     verify_token,
 )
 from foodops.core.config import settings
-from foodops.db.models import Usuario
+from foodops.db.models import PuntoVenta, Usuario
 from foodops.domain.schemas import LoginRequest, TokenResponse
 
 logger = logging.getLogger(__name__)
@@ -94,6 +97,25 @@ def login(request: Request, body: LoginRequest):
             session.commit()
             raise _GENERIC_ERROR
 
+        # Un rol de tienda sin tienda asignada no puede operar: antes entraba
+        # con punto_id 0 y todas sus consultas devolvían listas vacías sin
+        # ningún error, que es peor que no dejarlo entrar.
+        if usuario.punto_id is None and usuario.rol.value not in ROLES_MULTI_TIENDA:
+            registrar_auditoria(
+                session,
+                accion="LOGIN_SIN_TIENDA",
+                entidad="usuario",
+                entidad_id=usuario.id,
+                usuario_id=usuario.id,
+                detalle={"rol": usuario.rol.value},
+                ip=client_ip,
+            )
+            session.commit()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Su usuario no tiene una tienda asignada, contacte al administrador",
+            )
+
         # Successful login: reset counters
         usuario.intentos_fallidos = 0
         usuario.bloqueado_hasta = None
@@ -102,8 +124,9 @@ def login(request: Request, body: LoginRequest):
             data={
                 "user_id": usuario.id,
                 "username": usuario.username,
-                "punto_id": usuario.punto_id or 0,
+                "punto_id": usuario.punto_id,
                 "rol": usuario.rol.value,
+                "empresa_id": usuario.empresa_id,
             },
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
         )
@@ -120,14 +143,22 @@ def login(request: Request, body: LoginRequest):
 
 
 @router.get("/me")
-def get_me(current_user=Depends(get_current_user)):
-    """Obtiene usuario actual desde el JWT."""
-    return {
-        "user_id": current_user.user_id,
-        "username": current_user.username,
-        "punto_id": current_user.punto_id,
-        "rol": current_user.rol,
-    }
+def get_me(current_user: TokenData = Depends(get_current_user)):
+    """Usuario actual. Añade el nombre de su tienda y si ve todas, que es lo
+    que el frontend usa para decidir si muestra el selector de tienda."""
+    session = Session()
+    try:
+        punto = session.get(PuntoVenta, current_user.punto_id) if current_user.punto_id else None
+        return {
+            "user_id": current_user.user_id,
+            "username": current_user.username,
+            "punto_id": current_user.punto_id,
+            "punto_nombre": punto.nombre if punto else None,
+            "rol": current_user.rol,
+            "ve_todas_las_tiendas": usuario_ve_todas_las_tiendas(current_user),
+        }
+    finally:
+        session.close()
 
 
 @router.get("/usuarios")
