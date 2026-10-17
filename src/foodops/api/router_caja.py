@@ -18,7 +18,7 @@ from foodops.core.auth import (
     resolver_punto_id,
 )
 from foodops.core.config import settings
-from foodops.db.models import TransaccionVenta
+from foodops.db.models import PuntoVenta, TransaccionVenta
 from foodops.db.models_caja import (
     CajaDiaria,
     Desperdicio,
@@ -105,6 +105,12 @@ def _caja_dict(caja: CajaDiaria) -> dict:
         "created_at": str(caja.created_at),
         "cerrada_at": str(caja.cerrada_at) if caja.cerrada_at else None,
     }
+
+
+def _nombres_puntos(session) -> dict:
+    """{punto_id: nombre}. Se adjunta a los listados en modo "todas las
+    tiendas" para que el frontend pueda agrupar sin una llamada extra."""
+    return {p.id: p.nombre for p in session.execute(select(PuntoVenta)).scalars().all()}
 
 
 def _gasto_dict(g: Gasto) -> dict:
@@ -459,18 +465,28 @@ def registrar_gasto(
 def listar_gastos(
     fecha: Optional[date] = Query(default=None),
     categoria: Optional[str] = Query(default=None),
+    punto_id: Optional[int] = Query(default=None),
     current_user: TokenData = Depends(requiere_rol(*_ROLES_TIENDA)),
 ):
+    """Gastos de la tienda del usuario. Gerencia puede pedir otra con
+    ?punto_id= u omitirlo para ver todas."""
+    effective_punto_id = _resolve_punto_id(current_user, punto_id, permitir_todas=True)
     session = Session()
     try:
-        stmt = select(Gasto).where(Gasto.punto_id == current_user.punto_id)
+        stmt = select(Gasto)
+        if effective_punto_id is not None:
+            stmt = stmt.where(Gasto.punto_id == effective_punto_id)
         if fecha:
             day_start, day_end = _day_bounds(fecha)
             stmt = stmt.where(Gasto.created_at >= day_start, Gasto.created_at < day_end)
         if categoria:
             stmt = stmt.where(Gasto.categoria == categoria)
         gastos = session.execute(stmt.order_by(Gasto.created_at.desc())).scalars().all()
-        return [_gasto_dict(g) for g in gastos]
+        nombres = _nombres_puntos(session) if effective_punto_id is None else {}
+        return [
+            {**_gasto_dict(g), "punto_nombre": nombres.get(g.punto_id)} if nombres else _gasto_dict(g)
+            for g in gastos
+        ]
     finally:
         session.close()
 
@@ -532,16 +548,25 @@ def registrar_desperdicio(
 @router.get("/desperdicios")
 def listar_desperdicios(
     fecha: Optional[date] = Query(default=None),
+    punto_id: Optional[int] = Query(default=None),
     current_user: TokenData = Depends(requiere_rol(*_ROLES_TIENDA)),
 ):
+    """Ver listar_gastos: mismo contrato de alcance."""
+    effective_punto_id = _resolve_punto_id(current_user, punto_id, permitir_todas=True)
     session = Session()
     try:
-        stmt = select(Desperdicio).where(Desperdicio.punto_id == current_user.punto_id)
+        stmt = select(Desperdicio)
+        if effective_punto_id is not None:
+            stmt = stmt.where(Desperdicio.punto_id == effective_punto_id)
         if fecha:
             day_start, day_end = _day_bounds(fecha)
             stmt = stmt.where(Desperdicio.created_at >= day_start, Desperdicio.created_at < day_end)
         desperdicios = session.execute(stmt.order_by(Desperdicio.created_at.desc())).scalars().all()
-        return [_desperdicio_dict(d) for d in desperdicios]
+        nombres = _nombres_puntos(session) if effective_punto_id is None else {}
+        return [
+            {**_desperdicio_dict(d), "punto_nombre": nombres.get(d.punto_id)} if nombres else _desperdicio_dict(d)
+            for d in desperdicios
+        ]
     finally:
         session.close()
 
@@ -861,13 +886,34 @@ def _calcular_consumo(session, punto_id: int, fecha: date) -> list:
 @router.get("/inventario/consumo")
 def reporte_consumo(
     fecha: date = Query(...),
+    punto_id: Optional[int] = Query(default=None),
     current_user: TokenData = Depends(requiere_rol(*_ROLES_TIENDA)),
 ):
+    """Consumo del día. Gerencia puede omitir punto_id para recibir un bloque
+    por tienda en vez de un único listado."""
+    effective_punto_id = _resolve_punto_id(current_user, punto_id, permitir_todas=True)
     session = Session()
     try:
+        if effective_punto_id is not None:
+            return {
+                "fecha": str(fecha),
+                "punto_id": effective_punto_id,
+                "items": _calcular_consumo(session, effective_punto_id, fecha),
+            }
+        puntos = session.execute(
+            select(PuntoVenta).where(PuntoVenta.activo.is_(True)).order_by(PuntoVenta.id)
+        ).scalars().all()
         return {
             "fecha": str(fecha),
-            "items": _calcular_consumo(session, current_user.punto_id, fecha),
+            "punto_id": None,
+            "por_tienda": [
+                {
+                    "punto_id": p.id,
+                    "punto_nombre": p.nombre,
+                    "items": _calcular_consumo(session, p.id, fecha),
+                }
+                for p in puntos
+            ],
         }
     finally:
         session.close()

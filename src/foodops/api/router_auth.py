@@ -164,15 +164,17 @@ def get_me(current_user: TokenData = Depends(get_current_user)):
 @router.get("/usuarios")
 def listar_usuarios(
     rol: Optional[str] = Query(default=None),
+    punto_id: Optional[int] = Query(default=None),
     current_user: TokenData = Depends(requiere_rol("resp_tienda", "gerente_general", "admin")),
 ):
-    """Lista usuarios activos del punto de venta del usuario autenticado (ej. repartidores)."""
+    """Usuarios activos de la tienda del usuario autenticado (ej. repartidores).
+    Gerencia puede pedir otra tienda con ?punto_id= u omitirlo para ver todas."""
     session = Session()
     try:
-        stmt = select(Usuario).where(
-            Usuario.punto_id == current_user.punto_id,
-            Usuario.activo.is_(True),
-        )
+        effective_punto_id = resolver_punto_id(session, current_user, punto_id, permitir_todas=True)
+        stmt = select(Usuario).where(Usuario.activo.is_(True))
+        if effective_punto_id is not None:
+            stmt = stmt.where(Usuario.punto_id == effective_punto_id)
         if rol:
             stmt = stmt.where(Usuario.rol == rol)
         usuarios = session.execute(stmt).scalars().all()
@@ -182,6 +184,7 @@ def listar_usuarios(
                 "username": u.username,
                 "nombre_completo": u.nombre_completo,
                 "rol": u.rol.value,
+                "punto_id": u.punto_id,
             }
             for u in usuarios
         ]
