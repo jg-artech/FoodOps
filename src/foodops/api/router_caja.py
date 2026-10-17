@@ -586,6 +586,9 @@ def actualizar_item_inventario(
         item = session.get(ItemInventario, item_id)
         if not item:
             raise HTTPException(status_code=404, detail="Item no encontrado")
+        # Catálogo global: punto_id es NULL y esto no filtra nada. Se deja por
+        # si algún item quedara etiquetado a una tienda.
+        exigir_acceso_a_punto(current_user, item.punto_id)
         updates = body.model_dump(exclude_unset=True)
         for field, value in updates.items():
             if field == "tipo" and value is not None:
@@ -940,6 +943,8 @@ def liquidar_fondo_repartidor(
         fondo = session.get(FondoRepartidor, fondo_id)
         if not fondo:
             raise HTTPException(status_code=404, detail="Fondo no encontrado")
+        caja = session.get(CajaDiaria, fondo.caja_id)
+        exigir_acceso_a_punto(current_user, caja.punto_id if caja else None)
         if current_user.rol == "repartidor" and fondo.repartidor_id != current_user.user_id:
             raise HTTPException(status_code=403, detail="Solo puede liquidar su propio fondo")
         if fondo.estado == "liquidado":
@@ -1022,6 +1027,7 @@ def completar_transaccion_pedido(
         pedido = session.get(TransaccionPedido, pedido_id)
         if not pedido:
             raise HTTPException(status_code=404, detail="Pedido no encontrado")
+        exigir_acceso_a_punto(current_user, pedido.punto_id)
         pedido.estado = "completada"
         pedido.completado_por = current_user.user_id
         pedido.completado_at = datetime.utcnow()

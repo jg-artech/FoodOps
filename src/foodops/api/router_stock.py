@@ -370,6 +370,7 @@ def confirmar_pedido_reabastecimiento(
         pedido = session.get(PedidoReabastecimiento, pedido_id)
         if not pedido:
             raise HTTPException(status_code=404, detail="Pedido no encontrado")
+        exigir_acceso_a_punto(current_user, pedido.punto_id)
         if pedido.estado != "pendiente":
             raise HTTPException(status_code=400, detail="Solo se puede confirmar un pedido pendiente")
 
@@ -406,6 +407,7 @@ def recibir_pedido_reabastecimiento(
         pedido = session.get(PedidoReabastecimiento, pedido_id)
         if not pedido:
             raise HTTPException(status_code=404, detail="Pedido no encontrado")
+        exigir_acceso_a_punto(current_user, pedido.punto_id)
         if pedido.estado not in ("confirmado", "pendiente"):
             raise HTTPException(status_code=400, detail="Este pedido ya fue recibido o fue cancelado")
 
