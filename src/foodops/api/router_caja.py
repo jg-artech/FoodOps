@@ -233,10 +233,11 @@ def abrir_caja(
 ):
     session = Session()
     try:
+        punto_id = exigir_punto_propio(current_user)
         hoy = date.today()
         existente = session.execute(
             select(CajaDiaria).where(
-                CajaDiaria.punto_id == current_user.punto_id,
+                CajaDiaria.punto_id == punto_id,
                 CajaDiaria.fecha == hoy,
             )
         ).scalars().first()
@@ -244,7 +245,7 @@ def abrir_caja(
             raise HTTPException(status_code=400, detail="Ya existe una caja para hoy en este punto de venta")
 
         caja = CajaDiaria(
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             fecha=hoy,
             fondo_inicial=body.fondo_inicial,
             estado="abierta",
@@ -255,7 +256,7 @@ def abrir_caja(
 
         inv_apertura = InventarioDiario(
             caja_id=caja.id,
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             fecha=hoy,
             momento="apertura",
             registrado_por=current_user.user_id,
@@ -268,7 +269,7 @@ def abrir_caja(
         ayer = hoy - timedelta(days=1)
         caja_ayer = session.execute(
             select(CajaDiaria).where(
-                CajaDiaria.punto_id == current_user.punto_id,
+                CajaDiaria.punto_id == punto_id,
                 CajaDiaria.fecha == ayer,
             )
         ).scalars().first()
@@ -300,7 +301,7 @@ def abrir_caja(
             entidad="caja_diaria",
             entidad_id=caja.id,
             usuario_id=current_user.user_id,
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             detalle={"fondo_inicial": float(body.fondo_inicial)},
         )
         session.commit()
@@ -320,7 +321,7 @@ def caja_actual(current_user: TokenData = Depends(requiere_rol(*_ROLES_TIENDA)))
     try:
         caja = session.execute(
             select(CajaDiaria).where(
-                CajaDiaria.punto_id == current_user.punto_id,
+                CajaDiaria.punto_id == exigir_punto_propio(current_user),
                 CajaDiaria.fecha == date.today(),
             )
         ).scalars().first()
@@ -360,7 +361,8 @@ def cerrar_caja(
 ):
     session = Session()
     try:
-        caja = _get_caja_abierta(session, current_user.punto_id)
+        punto_id = exigir_punto_propio(current_user)
+        caja = _get_caja_abierta(session, punto_id)
 
         inv_cierre = session.execute(
             select(InventarioDiario).where(
@@ -390,7 +392,7 @@ def cerrar_caja(
             entidad="caja_diaria",
             entidad_id=caja.id,
             usuario_id=current_user.user_id,
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             detalle={
                 "efectivo_esperado": float(efectivo_esperado),
                 "efectivo_contado": float(body.efectivo_contado),
@@ -420,10 +422,11 @@ def registrar_gasto(
 ):
     session = Session()
     try:
-        caja = _get_caja_abierta(session, current_user.punto_id)
+        punto_id = exigir_punto_propio(current_user)
+        caja = _get_caja_abierta(session, punto_id)
         gasto = Gasto(
             caja_id=caja.id,
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             categoria=body.categoria.value,
             descripcion=body.descripcion,
             monto=body.monto,
@@ -438,7 +441,7 @@ def registrar_gasto(
             entidad="gasto",
             entidad_id=gasto.id,
             usuario_id=current_user.user_id,
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             detalle={"categoria": body.categoria.value, "monto": float(body.monto)},
         )
         session.commit()
@@ -484,16 +487,17 @@ def registrar_desperdicio(
 ):
     session = Session()
     try:
+        punto_id = exigir_punto_propio(current_user)
         costo_estimado = None
         if body.item_inventario_id:
             item = session.get(ItemInventario, body.item_inventario_id)
             if item:
-                costo_unitario = _lookup_costo_unitario(session, current_user.punto_id, item.nombre)
+                costo_unitario = _lookup_costo_unitario(session, punto_id, item.nombre)
                 if costo_unitario is not None:
                     costo_estimado = Decimal(str(body.cantidad)) * costo_unitario
 
         desperdicio = Desperdicio(
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             producto_id=body.producto_id,
             item_inventario_id=body.item_inventario_id,
             cantidad=body.cantidad,
@@ -511,7 +515,7 @@ def registrar_desperdicio(
             entidad="desperdicio",
             entidad_id=desperdicio.id,
             usuario_id=current_user.user_id,
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             detalle={"cantidad": body.cantidad, "unidad": body.unidad},
         )
         session.commit()
@@ -555,7 +559,7 @@ def crear_item_inventario(
     session = Session()
     try:
         item = ItemInventario(
-            punto_id=current_user.punto_id,
+            punto_id=exigir_punto_propio(current_user),
             nombre=body.nombre,
             tipo=body.tipo.value,
             unidad=body.unidad,
@@ -630,7 +634,8 @@ def listar_items_inventario(
 
 
 def _submit_inventario(session, current_user: TokenData, momento: str, body: InventarioDiarioSubmit) -> InventarioDiario:
-    caja = _get_caja_abierta(session, current_user.punto_id)
+    punto_id = exigir_punto_propio(current_user)
+    caja = _get_caja_abierta(session, punto_id)
     hoy = date.today()
 
     inv = session.execute(
@@ -642,7 +647,7 @@ def _submit_inventario(session, current_user: TokenData, momento: str, body: Inv
     if not inv:
         inv = InventarioDiario(
             caja_id=caja.id,
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             fecha=hoy,
             momento=momento,
             registrado_por=current_user.user_id,
@@ -701,7 +706,7 @@ def get_inventario_diario(
     try:
         caja = session.execute(
             select(CajaDiaria).where(
-                CajaDiaria.punto_id == current_user.punto_id,
+                CajaDiaria.punto_id == exigir_punto_propio(current_user),
                 CajaDiaria.fecha == date.today(),
             )
         ).scalars().first()
@@ -880,7 +885,8 @@ def entregar_fondo_repartidor(
 ):
     session = Session()
     try:
-        caja = _get_caja_abierta(session, current_user.punto_id)
+        punto_id = exigir_punto_propio(current_user)
+        caja = _get_caja_abierta(session, punto_id)
         fondo = FondoRepartidor(
             caja_id=caja.id,
             repartidor_id=body.repartidor_id,
@@ -896,7 +902,7 @@ def entregar_fondo_repartidor(
             entidad="fondo_repartidor",
             entidad_id=fondo.id,
             usuario_id=current_user.user_id,
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             detalle={"repartidor_id": body.repartidor_id, "monto_entregado": float(body.monto_entregado)},
         )
         session.commit()
@@ -916,7 +922,7 @@ def listar_fondos_repartidor(current_user: TokenData = Depends(requiere_rol(*_RO
     try:
         caja = session.execute(
             select(CajaDiaria).where(
-                CajaDiaria.punto_id == current_user.punto_id,
+                CajaDiaria.punto_id == exigir_punto_propio(current_user),
                 CajaDiaria.fecha == date.today(),
             )
         ).scalars().first()
@@ -991,7 +997,7 @@ def crear_transaccion_pedido(
     session = Session()
     try:
         pedido = TransaccionPedido(
-            punto_id=current_user.punto_id,
+            punto_id=exigir_punto_propio(current_user),
             tipo=body.tipo,
             items_json=[item.model_dump() for item in body.items],
             estado="pendiente",

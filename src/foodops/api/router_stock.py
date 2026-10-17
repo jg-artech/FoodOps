@@ -303,8 +303,9 @@ def crear_pedido_reabastecimiento(
 ):
     session = Session()
     try:
+        punto_id = exigir_punto_propio(current_user)
         pedido = PedidoReabastecimiento(
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             tipo=body.tipo.value,
             estado="pendiente",
             creado_por=current_user.user_id,
@@ -328,7 +329,7 @@ def crear_pedido_reabastecimiento(
             entidad="pedido_reabastecimiento",
             entidad_id=pedido.id,
             usuario_id=current_user.user_id,
-            punto_id=current_user.punto_id,
+            punto_id=punto_id,
             detalle={"tipo": body.tipo.value, "items": len(body.items)},
         )
         session.commit()
