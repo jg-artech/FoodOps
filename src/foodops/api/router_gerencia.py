@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from foodops.api.router_stock import _pedido_dict, _recomendaciones, _stock_actual
-from foodops.core.auth import TokenData, requiere_rol
+from foodops.core.auth import TokenData, requiere_rol, resolver_punto_id
 from foodops.core.config import settings
 from foodops.db.models import PuntoVenta
 from foodops.db.models_stock import PedidoReabastecimiento
@@ -55,9 +55,16 @@ def dashboard_gerente(
     punto_id: Optional[int] = Query(default=None),
     current_user: TokenData = Depends(requiere_rol(*_ROLES_GERENCIA)),
 ):
+    """Dashboard de una tienda. Si se omite punto_id y el gerente no tiene
+    tienda propia, devuelve un bloque por tienda en vez de un 404."""
     session = Session()
     try:
-        effective_punto_id = punto_id or current_user.punto_id
+        effective_punto_id = resolver_punto_id(session, current_user, punto_id, permitir_todas=True)
+        if effective_punto_id is None:
+            puntos = session.execute(
+                select(PuntoVenta).where(PuntoVenta.activo.is_(True)).order_by(PuntoVenta.id)
+            ).scalars().all()
+            return {"punto": None, "por_tienda": [_dashboard_punto(session, p) for p in puntos]}
         punto = session.get(PuntoVenta, effective_punto_id)
         if not punto:
             raise HTTPException(status_code=404, detail="Punto de venta no encontrado")

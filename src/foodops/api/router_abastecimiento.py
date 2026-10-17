@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
-from foodops.core.auth import TokenData, get_current_user, requiere_rol
+from foodops.core.auth import ROLES_MULTI_TIENDA, TokenData, get_current_user, requiere_rol
 from foodops.core.config import settings
 from foodops.db.models import Orden, PuntoVenta, Usuario
 from foodops.db.models_caja import ItemInventario
@@ -483,7 +483,10 @@ def _punto_venta_dict(p: PuntoVenta) -> dict:
 
 
 @router.get("/puntos-venta")
-def listar_puntos_venta(current_user: TokenData = Depends(get_current_user)):
+def listar_puntos_venta(current_user: TokenData = Depends(requiere_rol(*ROLES_MULTI_TIENDA))):
+    """Solo los roles multitienda: son los únicos que necesitan el selector de
+    tienda o la vista central. Un tomador_orden no tiene por qué recibir la
+    dirección y el teléfono de todas las sucursales."""
     session = Session()
     try:
         puntos = session.execute(
