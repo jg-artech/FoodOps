@@ -548,18 +548,59 @@ SELECT punto_id, numero_orden, count(*) FROM ordenes
 GROUP BY 1, 2 HAVING count(*) > 1;
 ```
 
-En la BD local ambos devolvieron 0 filas.
+En la BD local ambos devolvieron 0 filas. **Ya confirmado también en
+producción** (ver §12): usuarios ya tienen tienda asignada.
+
+### Respaldo obligatorio antes de migrar (nuevo paso 0)
+
+**Antes de `alembic upgrade head` en producción**, tomar un `pg_dump` en
+formato custom (permite restaurar tablas individuales, no solo todo el
+dump):
+
+```bash
+# Ejecutar en el servidor de producción, o remoto apuntando a su Postgres.
+# Ajustar host/usuario/base a los de producción.
+PGPASSWORD='<password de producción>' pg_dump \
+  -h <host_produccion> -p 5432 -U <usuario_produccion> -d <base_produccion> \
+  -F c -f "foodops_prod_pre_010_$(date +%Y%m%d_%H%M%S).dump"
+```
+
+Verificar que el archivo no quedó vacío antes de continuar:
+
+```bash
+ls -la foodops_prod_pre_010_*.dump   # debe pesar varios MB, no 0 bytes
+pg_restore -l foodops_prod_pre_010_*.dump | head   # lista el contenido sin restaurar nada
+```
+
+Guardar el `.dump` fuera del servidor (descargarlo, o copiarlo a otro host)
+antes de aplicar la migración — si algo sale mal, un backup que vive solo en
+el disco que se está modificando no sirve de mucho.
+
+Restaurar, si hiciera falta, con:
+
+```bash
+pg_restore -h <host> -U <usuario> -d <base> --clean --if-exists foodops_prod_pre_010_*.dump
+```
+
+Esto se verificó en la sesión de revisión: se tomó un `pg_dump` de la BD
+local, se corrió `alembic downgrade -1` (quita FK, índice, CHECK y
+UNIQUE de la migración 010) y después `alembic upgrade head` para volver a
+head. El downgrade no tocó ninguna fila — se confirmaron los mismos
+conteos de `ordenes`, `usuarios` y `gastos` antes y después — así que el
+respaldo es una red de seguridad extra, no un prerrequisito para que el
+downgrade funcione.
 
 ### Secuencia de despliegue
 
-1. **Asignar tienda a cada usuario existente** (`UPDATE usuarios SET punto_id = …`).
+1. **Respaldo** (`pg_dump`, ver arriba).
+2. **Asignar tienda a cada usuario existente** (`UPDATE usuarios SET punto_id = …`).
    Es el paso que desbloquea la consulta 1. Un usuario con rol de tienda y sin
    tienda **ya no podrá iniciar sesión** después de este cambio: recibe un 403
    con el motivo, en vez de la sesión vacía de antes.
-2. Aplicar la migración: `alembic upgrade head` (009 → 010).
-3. Desplegar backend y frontend. Recordar purgar `sw.js` en Cloudflare tras
+3. Aplicar la migración: `alembic upgrade head` (009 → 010).
+4. Desplegar backend y frontend. Recordar purgar `sw.js` en Cloudflare tras
    subir el frontend, por el service worker cacheado.
-4. **Todos los usuarios deben volver a iniciar sesión.** Los tokens vigentes
+5. **Todos los usuarios deben volver a iniciar sesión.** Los tokens vigentes
    no llevan `empresa_id` y, aunque siguen siendo válidos, se saltan la
    validación de empresa hasta que expiren.
 
@@ -575,3 +616,90 @@ En la BD local ambos devolvieron 0 filas.
   rol de tienda.
 - Los números de orden nuevos son `ORD-{punto}-{timestamp}`. Los anteriores no
   cambian.
+
+---
+
+## 12. Revisión de cierre (2026-10-17, segunda pasada)
+
+Antes de dar por cerrada la tarea, se releyó el diff completo de
+`router_auth.py`, `router_ordenes.py`, `router_caja.py` y la migración `010`
+contra los tres puntos pedidos.
+
+### 1. ¿Un usuario de tienda puede leer o modificar datos de otra tienda?
+
+**Se encontró y corrigió una regresión real** (commit `1d63cee`), fuera de lo
+que pedía estrictamente "usuario de tienda": al centralizar la lógica de
+alcance, `GET /api/ordenes/` (que no exige rol porque también lo usan cocina
+y reparto) delegaba en `resolver_punto_id`, que trata a **cualquier** rol de
+`ROLES_MULTI_TIENDA` — incluido `gerente_central` — como "ve todas las
+tiendas". El docstring del endpoint seguía diciendo *"Solo GERENTE_GENERAL y
+ADMIN pueden pasar ?punto_id="*, pero el código ya no lo cumplía: un
+`gerente_central` podía leer el detalle de órdenes de cualquier tienda
+pasando `?punto_id=`, aunque se acordó que su ámbito es solo abastecimiento.
+
+Se agregó un guard explícito con `ROLES_TODAS_TIENDAS` (que excluye a
+`gerente_central`) antes de delegar en `resolver_punto_id`, y un test que
+falla sin el fix (verificado revirtiéndolo).
+
+Se revisaron los demás 11 call sites de `resolver_punto_id`/`_resolve_punto_id`
+en `router_caja.py`, `router_stock.py`, `router_gerencia.py` y
+`router_auth.py`: todos están detrás de un `requiere_rol(*_ROLES_TIENDA)` o
+`*_ROLES_GERENCIA` que ya excluye a `gerente_central`, así que ninguno tenía
+el mismo problema. `listar_ordenes` era el único endpoint sin rol exigido que
+delegaba en la resolución general.
+
+Para un **usuario de tienda propiamente dicho** (`tomador_orden`,
+`resp_tienda`, `cocinero`, `repartidor`, `gerente_punto`): confirmado que no
+puede ni leer (403 en todos los `GET` con selector) ni modificar (403 en los
+7 endpoints de escritura corregidos en el commit `5ea3db0`) datos de otra
+tienda. `exigir_acceso_a_punto` se llama después de cada `session.get()` por
+id de URL, así que el id ya no es autorización por sí solo.
+
+### 2. ¿Es reversible la migración 010?
+
+**Sí, verificado en vivo**, no solo leyendo el código:
+
+1. `pg_dump` de la BD local (respaldo, por disciplina — no fue necesario
+   restaurarlo).
+2. `alembic downgrade -1`: corrió sin error, quitó los 3 constraints y el
+   índice. Conteos de `ordenes` (40), `usuarios` (2) y `gastos` (1) idénticos
+   antes y después — el downgrade no borra ni modifica filas.
+3. `alembic upgrade head`: volvió a aplicar sin error, constraints de
+   vuelta.
+
+La única parte **no reversible, y documentada como tal en el propio archivo**
+(comentario al inicio de `downgrade()`): los 26 valores originales de
+`items_inventario.punto_id` que la migración puso en `NULL`. No se pueden
+restaurar porque el `UPDATE` no guarda el valor anterior en ningún lado — y
+no haría falta, porque esos valores eran un accidente de qué usuario creó
+cada item, no un dato de negocio (ver §6).
+
+### 3. ¿Los tests cubren 403 y GERENTE_GENERAL viendo todo?
+
+Cobertura que ya existía: 6 casos de 403 (cross-tienda en órdenes,
+cancelar orden ajena, recibir pedido ajeno, liquidar fondo ajeno, GG
+cross-empresa, login sin tienda) y 2 de GERENTE_GENERAL viendo todo
+(`/api/ordenes/?punto_id=`, `/api/auth/usuarios` sin `punto_id`).
+
+**Gap encontrado y cerrado** en esta revisión: ningún test cubría el modo
+"todas las tiendas" (`permitir_todas=True`) que se agregó en el commit
+`f8b51a6` para `/api/gastos`, `/api/desperdicios`, `/api/inventario/consumo`
+y `/api/gerencia/dashboard` — ni el caso de `gerente_central` cruzando tienda
+en órdenes (que es justo el que reveló la regresión del punto 1). Se
+agregaron:
+
+- `test_gerente_central_no_puede_leer_ordenes_de_otra_tienda`
+- `test_gerente_general_ve_gastos_de_todas_las_tiendas_sin_punto_id`
+- `test_responsable_de_jordan_no_ve_gastos_de_otras_tiendas`
+
+**22 tests pasan** (19 + 3 de esta revisión). Los dos cambios de esta pasada
+(el fix y los tests) se verificaron fallando antes del fix y pasando después.
+
+### Pendiente de verificar en una futura pasada (no bloqueante)
+
+`/api/desperdicios` y `/api/inventario/consumo` en modo "todas las tiendas"
+quedaron sin test dedicado (se extrapola de `/api/gastos`, que comparte la
+misma función `_resolve_punto_id` con `permitir_todas=True`, pero no son el
+mismo código de endpoint). Si se quiere cobertura exhaustiva antes de
+desplegar, vale la pena agregarlos; no se consideran bloqueantes porque la
+lógica que ejercen es la misma ya probada.
