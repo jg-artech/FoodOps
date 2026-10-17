@@ -101,7 +101,7 @@ const esGerencia = computed(() => ['gerente_general', 'admin'].includes(auth.use
 const puedeAbastecimiento = computed(() => ['gerente_central', 'gerente_general', 'admin'].includes(auth.user?.rol))
 
 const tiendas = ref([])
-const puntoSeleccionado = ref(auth.puntoId)
+const puntoSeleccionado = ref(auth.puntoActivo || auth.puntoId)
 const stock = ref([])
 const recomendaciones = ref([])
 const resumen = ref(null)
@@ -170,6 +170,8 @@ async function crearPedido() {
 
 function seleccionarTienda(puntoId) {
   puntoSeleccionado.value = puntoId
+  // Mantiene el selector global de la NavBar en sintonía con esta vista.
+  if (auth.veTodasLasTiendas) auth.seleccionarTienda(puntoId)
   cargar()
 }
 

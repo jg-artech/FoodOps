@@ -626,8 +626,10 @@ async function confirmarOrden() {
     const margenBruto = totalPrecio.value - costoTotal
     const margenPct   = totalPrecio.value > 0 ? Math.round((margenBruto / totalPrecio.value) * 100) : 0
 
+    // La tienda no se manda: el backend la toma del token y descarta
+    // cualquier punto_id del body. El fallback "|| 2" que había aquí cableaba
+    // Local Centro para cualquier usuario sin tienda.
     api.post('/api/ordenes/transacciones/', {
-      punto_id:                  auth.puntoId || 2,
       orden_id:                  data.id,
       tipo_venta:                'individual',
       cliente_nombre:            form.tipo === 'domicilio' ? form.cliente_nombre : null,
