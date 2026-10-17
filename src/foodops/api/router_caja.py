@@ -584,7 +584,9 @@ def crear_item_inventario(
     session = Session()
     try:
         item = ItemInventario(
-            punto_id=exigir_punto_propio(current_user),
+            # Catálogo de empresa: no se etiqueta a la tienda del creador
+            # (era lo que dejaba la tabla a medio llenar). Ver migración 010.
+            punto_id=None,
             nombre=body.nombre,
             tipo=body.tipo.value,
             unidad=body.unidad,

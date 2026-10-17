@@ -46,7 +46,7 @@ class Gasto(Base):
 
     id = Column(Integer, primary_key=True)
     caja_id = Column(Integer, ForeignKey("cajas_diarias.id"), nullable=False)
-    punto_id = Column(Integer, nullable=False)
+    punto_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=False)
     categoria = Column(String(40), nullable=False)
     descripcion = Column(String(200), nullable=False)
     monto = Column(Numeric(10, 2), nullable=False)
@@ -74,6 +74,11 @@ class Desperdicio(Base):
 
 
 class ItemInventario(Base):
+    """Catálogo de inventario de la EMPRESA, no de la tienda: las recetas
+    (producto_componentes) apuntan a estos ids desde cualquier tienda y el
+    stock por tienda se calcula en otras tablas. punto_id queda como NULL;
+    la migración 010 limpió los valores heredados."""
+
     __tablename__ = "items_inventario"
 
     id = Column(Integer, primary_key=True)

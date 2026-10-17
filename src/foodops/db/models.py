@@ -1,6 +1,6 @@
 """Modelos SQLAlchemy para BD"""
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Enum, Text, JSON, BigInteger, TIMESTAMP
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, CheckConstraint, ForeignKey, Enum, Text, JSON, BigInteger, TIMESTAMP, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -83,6 +83,15 @@ class Usuario(Base):
     empresa = relationship("Empresa", back_populates="usuarios")
     punto = relationship("PuntoVenta", back_populates="usuarios")
 
+    # Un rol de tienda sin tienda asignada produce una sesión inoperable
+    # (ver migración 010). El enum guarda el NOMBRE del miembro, no su valor.
+    __table_args__ = (
+        CheckConstraint(
+            "punto_id IS NOT NULL OR rol::text IN ('ADMIN', 'GERENTE_GENERAL', 'GERENTE_CENTRAL')",
+            name="ck_usuarios_tienda_segun_rol",
+        ),
+    )
+
 class Orden(Base):
     __tablename__ = "ordenes"
     
@@ -106,6 +115,12 @@ class Orden(Base):
     punto = relationship("PuntoVenta", back_populates="ordenes")
     items = relationship("OrdenItem", back_populates="orden")
     tomada_por_usuario = relationship("Usuario", foreign_keys=[tomada_por])
+
+    # Único por tienda, no global: los números previos al multitienda no
+    # llevaban la tienda en el prefijo (ver migración 010).
+    __table_args__ = (
+        UniqueConstraint("punto_id", "numero_orden", name="uq_ordenes_punto_numero"),
+    )
 
 class OrdenItem(Base):
     __tablename__ = "orden_items"
