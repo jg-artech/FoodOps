@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
 from foodops.core.auth import (
+    ROLES_TODAS_TIENDAS,
     TokenData,
     exigir_acceso_a_punto,
     exigir_punto_propio,
@@ -159,6 +160,15 @@ def listar_ordenes(
     Solo GERENTE_GENERAL y ADMIN pueden pasar ?punto_id= para ver otra tienda;
     para el resto pedir otra tienda es 403 (antes se ignoraba en silencio).
     """
+    # Este endpoint no exige rol (lo usan cocina y reparto), así que la
+    # resolución general de core.auth (que trata a gerente_central como
+    # "ve todas las tiendas" para efectos de abastecimiento) se quedaría
+    # corta aquí: gerente_central podría leer órdenes de cualquier tienda
+    # pasando ?punto_id=, que es justo el alcance que no debe tener (su
+    # ámbito es abastecimiento, no el detalle de órdenes de otra tienda).
+    if punto_id is not None and current_user.rol not in ROLES_TODAS_TIENDAS:
+        raise HTTPException(status_code=403, detail="No autorizado para esa tienda")
+
     session = Session()
     try:
         effective_punto_id = resolver_punto_id(session, current_user, punto_id)
