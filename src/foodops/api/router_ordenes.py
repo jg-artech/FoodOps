@@ -9,7 +9,14 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
-from foodops.core.auth import TokenData, get_current_user, requiere_rol
+from foodops.core.auth import (
+    TokenData,
+    exigir_acceso_a_punto,
+    exigir_punto_propio,
+    get_current_user,
+    requiere_rol,
+    resolver_punto_id,
+)
 from foodops.core.config import settings
 from foodops.db.models import (
     MetodoPago,
@@ -133,17 +140,12 @@ def listar_ordenes(
 ):
     """
     Listar órdenes del punto de venta del usuario autenticado.
-    Solo GERENTE_GENERAL y ADMIN pueden pasar ?punto_id= para ver otra tienda.
+    Solo GERENTE_GENERAL y ADMIN pueden pasar ?punto_id= para ver otra tienda;
+    para el resto pedir otra tienda es 403 (antes se ignoraba en silencio).
     """
-    _ROLES_MULTI_PUNTO = ("gerente_general", "admin")
-
-    if punto_id is not None and current_user.rol not in _ROLES_MULTI_PUNTO:
-        punto_id = None  # silently ignore; use the user's own punto
-
-    effective_punto_id = punto_id if punto_id is not None else current_user.punto_id
-
     session = Session()
     try:
+        effective_punto_id = resolver_punto_id(session, current_user, punto_id)
         ordenes = session.execute(
             select(Orden)
             .where(Orden.punto_id == effective_punto_id)
@@ -216,12 +218,9 @@ def reporte_cierre(
     ),
 ):
     """Reporte de cierre del día."""
-    _ROLES_MULTI_PUNTO = ("gerente_general", "admin")
-    if current_user.rol not in _ROLES_MULTI_PUNTO and punto_id != current_user.punto_id:
-        raise HTTPException(status_code=403, detail="No autorizado para este punto de venta")
-
     session = Session()
     try:
+        resolver_punto_id(session, current_user, punto_id)
         today = date.today()
         today_start = datetime(today.year, today.month, today.day)
 
@@ -419,12 +418,9 @@ def reporte_rentabilidad(
     ),
 ):
     """Análisis de rentabilidad del día actual."""
-    _ROLES_MULTI_PUNTO = ("gerente_general", "admin")
-    if current_user.rol not in _ROLES_MULTI_PUNTO and punto_id != current_user.punto_id:
-        raise HTTPException(status_code=403, detail="No autorizado para este punto de venta")
-
     session = Session()
     try:
+        resolver_punto_id(session, current_user, punto_id)
         today_start = datetime(date.today().year, date.today().month, date.today().day)
 
         transacciones = session.execute(

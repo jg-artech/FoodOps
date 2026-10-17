@@ -9,7 +9,14 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
-from foodops.core.auth import TokenData, get_current_user, requiere_rol
+from foodops.core.auth import (
+    TokenData,
+    exigir_acceso_a_punto,
+    exigir_punto_propio,
+    get_current_user,
+    requiere_rol,
+    resolver_punto_id,
+)
 from foodops.core.config import settings
 from foodops.db.models import TransaccionVenta
 from foodops.db.models_caja import (
@@ -64,10 +71,22 @@ def _get_caja_abierta(session, punto_id: int) -> CajaDiaria:
     return caja
 
 
-def _resolve_punto_id(current_user: TokenData, punto_id: Optional[int]) -> int:
-    if punto_id is not None and current_user.rol not in _ROLES_GERENCIA:
-        punto_id = None
-    return punto_id if punto_id is not None else current_user.punto_id
+def _resolve_punto_id(
+    current_user: TokenData,
+    punto_id: Optional[int] = None,
+    *,
+    permitir_todas: bool = False,
+) -> Optional[int]:
+    """Wrapper sobre core.auth.resolver_punto_id (fuente de verdad única del
+    alcance multitienda). Abre sesión solo cuando hay un punto_id que validar
+    contra la BD; sin punto_id la resolución es puramente del token."""
+    if punto_id is None:
+        return resolver_punto_id(None, current_user, None, permitir_todas=permitir_todas)
+    session = Session()
+    try:
+        return resolver_punto_id(session, current_user, punto_id, permitir_todas=permitir_todas)
+    finally:
+        session.close()
 
 
 def _caja_dict(caja: CajaDiaria) -> dict:
