@@ -1,0 +1,8 @@
+username,email,password,rol,punto,nombre_completo
+vendedor_centro,vendedor.centro@foodops.gt,Cambiar123!,tomador_orden,Local Centro,Vendedor Centro
+cocina_centro,cocina.centro@foodops.gt,Cambiar123!,cocinero,Local Centro,Cocina Centro
+resp_jordan,resp.jordan@foodops.gt,Cambiar123!,resp_tienda,Local Jordán,Responsable Jordán
+vendedor_jordan,vendedor.jordan@foodops.gt,Cambiar123!,tomador_orden,Local Jordán,Vendedor Jordán
+resp_auxiliar,resp.auxiliar@foodops.gt,Cambiar123!,resp_tienda,Local Auxiliar,Responsable Auxiliar
+vendedor_auxiliar,vendedor.auxiliar@foodops.gt,Cambiar123!,tomador_orden,Local Auxiliar,Vendedor Auxiliar
+gerente_regional,gerente.regional@foodops.gt,Cambiar123!,gerente_general,,Gerente Regional
