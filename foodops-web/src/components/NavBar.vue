@@ -14,6 +14,7 @@
       <RouterLink v-if="esGerenteGeneral" to="/central/reglas" class="hover:underline">⚙️ Reglas Abastecimiento</RouterLink>
       <RouterLink v-if="esGerenteGeneral" to="/central/puntos" class="hover:underline">🏪 Puntos de Venta</RouterLink>
       <RouterLink to="/cocina" target="_blank" class="hover:underline">Cocina</RouterLink>
+      <SelectorTienda />
       <span class="opacity-80">{{ auth.user?.username }}</span>
       <button @click="handleLogout" class="bg-white text-orange-500 px-3 py-1 rounded font-medium hover:bg-orange-50">
         Salir
@@ -24,6 +25,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import SelectorTienda from '@/components/SelectorTienda.vue'
 import { useAuthStore } from '@/store/index'
 import { useRouter } from 'vue-router'
 

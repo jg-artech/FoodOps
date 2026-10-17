@@ -111,6 +111,8 @@
       </button>
     </div>
 
+    <div v-else-if="errorMsg" class="text-center py-12 text-gray-500">{{ errorMsg }}</div>
+
     <div v-else class="text-center py-12 text-gray-400">No se pudo cargar el reporte.</div>
   </div>
 </template>
@@ -124,6 +126,7 @@ const auth = useAuthStore()
 const reporte = ref(null)
 const rentabilidad = ref(null)
 const loading = ref(false)
+const errorMsg = ref('')
 
 const metodosDisplay = [
   { key: 'efectivo',      label: 'Efectivo',      emoji: '💵' },
@@ -143,8 +146,15 @@ function porcentaje(key) {
 }
 
 async function fetchReporte() {
-  const puntoId = auth.puntoId
-  if (!puntoId) return
+  // Gerencia puede no tener tienda propia: entonces manda la del selector.
+  const puntoId = auth.puntoActivo || auth.puntoId
+  if (!puntoId) {
+    errorMsg.value = auth.veTodasLasTiendas
+      ? 'Elija una tienda en el selector para ver el cierre del día.'
+      : 'Su usuario no tiene una tienda asignada, contacte al administrador.'
+    return
+  }
+  errorMsg.value = ''
   loading.value = true
   try {
     const [r, rent] = await Promise.allSettled([

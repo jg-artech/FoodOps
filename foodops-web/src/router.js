@@ -22,6 +22,13 @@ import ReglasReabastecimientoView from '@/views/ReglasReabastecimientoView.vue'
 import PuntosVentaView from '@/views/PuntosVentaView.vue'
 
 
+// Roles que el backend ya exige para los endpoints de cada sección. Tenerlos
+// aquí evita que un rol equivocado llegue a una pantalla que solo le va a
+// devolver 403; la autorización real sigue siendo la del backend.
+const ROLES_CAJA = ['resp_tienda', 'gerente_general', 'admin']
+const ROLES_GERENCIA = ['gerente_general', 'admin']
+const ROLES_CENTRAL = ['gerente_central', 'gerente_general', 'admin']
+
 const routes = [
   { path: '/', redirect: '/dashboard' },
   { path: '/login', component: LoginView },
@@ -31,20 +38,20 @@ const routes = [
   { path: '/pos/nueva-orden', component: NewOrderView, meta: { requiresAuth: true } },
   { path: '/pos/ordenes', component: OrdersListView, meta: { requiresAuth: true } },
   { path: '/pos/cierre', component: DayClosureView, meta: { requiresAuth: true } },
-  { path: '/pos/config', component: ConfigView, meta: { requiresAuth: true } },
+  { path: '/pos/config', component: ConfigView, meta: { requiresAuth: true, roles: ROLES_GERENCIA } },
   { path: '/cocina', component: KitchenView, meta: { requiresAuth: true, noNav: true } },
-  { path: '/caja', component: CajaTiendaView, meta: { requiresAuth: true } },
-  { path: '/caja/inventario/:momento', component: InventarioView, meta: { requiresAuth: true } },
-  { path: '/caja/gastos', component: GastosView, meta: { requiresAuth: true } },
-  { path: '/caja/desperdicios', component: DesperdiciosView, meta: { requiresAuth: true } },
-  { path: '/caja/fondos-repartidor', component: FondosRepartidorView, meta: { requiresAuth: true } },
-  { path: '/caja/cierre', component: CierreCajaView, meta: { requiresAuth: true } },
-  { path: '/caja/stock', component: StockView, meta: { requiresAuth: true } },
-  { path: '/caja/pedidos-reabastecimiento', component: PedidosReabastecimientoView, meta: { requiresAuth: true } },
+  { path: '/caja', component: CajaTiendaView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
+  { path: '/caja/inventario/:momento', component: InventarioView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
+  { path: '/caja/gastos', component: GastosView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
+  { path: '/caja/desperdicios', component: DesperdiciosView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
+  { path: '/caja/fondos-repartidor', component: FondosRepartidorView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
+  { path: '/caja/cierre', component: CierreCajaView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
+  { path: '/caja/stock', component: StockView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
+  { path: '/caja/pedidos-reabastecimiento', component: PedidosReabastecimientoView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
   { path: '/central', redirect: '/central/abastecimiento' },
-  { path: '/central/abastecimiento', component: AbastecimientoView, meta: { requiresAuth: true } },
-  { path: '/central/reglas', component: ReglasReabastecimientoView, meta: { requiresAuth: true } },
-  { path: '/central/puntos', component: PuntosVentaView, meta: { requiresAuth: true } },
+  { path: '/central/abastecimiento', component: AbastecimientoView, meta: { requiresAuth: true, roles: ROLES_CENTRAL } },
+  { path: '/central/reglas', component: ReglasReabastecimientoView, meta: { requiresAuth: true, roles: ROLES_GERENCIA } },
+  { path: '/central/puntos', component: PuntosVentaView, meta: { requiresAuth: true, roles: ROLES_GERENCIA } },
   { path: '/pos/inventario-diario', component: InventarioDiarioView, meta: { requiresAuth: true } },
 ]
 
@@ -57,6 +64,10 @@ router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('token')
   if (to.meta.requiresAuth && !token) return next('/login')
   if (to.path === '/login' && token) return next('/dashboard')
+  if (to.meta.roles) {
+    const rol = JSON.parse(localStorage.getItem('user') || 'null')?.rol
+    if (!to.meta.roles.includes(rol)) return next('/dashboard')
+  }
   next()
 })
 
