@@ -1,19 +1,19 @@
 """Tests para main.py"""
 
-import pytest
-from httpx import AsyncClient
-from src.foodops.main import app
+from fastapi.testclient import TestClient
 
-@pytest.mark.asyncio
-async def test_root():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        response = await ac.get("/")
+from foodops.main import app
+
+
+def test_root():
+    with TestClient(app) as ac:
+        response = ac.get("/")
         assert response.status_code == 200
         assert response.json()["message"] == "FoodOps API"
 
-@pytest.mark.asyncio
-async def test_health():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        response = await ac.get("/health")
+
+def test_health():
+    with TestClient(app) as ac:
+        response = ac.get("/health")
         assert response.status_code == 200
         assert response.json()["status"] == "healthy"
