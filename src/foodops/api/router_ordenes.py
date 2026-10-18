@@ -198,6 +198,7 @@ def crear_orden(
 def listar_ordenes(
     current_user: TokenData = Depends(get_current_user),
     punto_id: Optional[int] = Query(default=None),
+    estado_cobro: Optional[str] = Query(default=None),
 ):
     """
     Listar órdenes del punto de venta del usuario autenticado.
@@ -223,6 +224,11 @@ def listar_ordenes(
         stmt = select(Orden).order_by(Orden.created_at.desc())
         if effective_punto_id is not None:
             stmt = stmt.where(Orden.punto_id == effective_punto_id)
+        # Para la pantalla de "Cobros pendientes": pedir solo las que
+        # todavía no se confirmaron, en vez de traer toda la tienda y
+        # filtrar en el navegador.
+        if estado_cobro is not None:
+            stmt = stmt.where(Orden.estado_cobro == estado_cobro)
         ordenes = session.execute(stmt).scalars().all()
 
         # Mapa de nombres de tienda: con "todas las tiendas" las órdenes
