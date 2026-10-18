@@ -24,6 +24,7 @@ from foodops.db.models import (
     Orden,
     OrdenEstado,
     OrdenItem,
+    PuntoVenta,
     TransaccionVenta,
     TipoVenta,
     Usuario,
@@ -52,7 +53,7 @@ _ROLES_OPERACION = (
 )
 
 
-def _orden_dict(o, items, tomada_por_nombre=None):
+def _orden_dict(o, items, tomada_por_nombre=None, punto_nombre=None):
     return {
         "id": o.id,
         "numero_orden": o.numero_orden,
@@ -69,6 +70,8 @@ def _orden_dict(o, items, tomada_por_nombre=None):
         "created_at": str(o.created_at),
         "tomada_por": o.tomada_por,
         "tomada_por_nombre": tomada_por_nombre,
+        "punto_id": o.punto_id,
+        "punto_nombre": punto_nombre,
         "items": [
             {
                 "producto": i.producto,
@@ -140,7 +143,13 @@ def crear_orden(
             detalle={"numero_orden": numero_orden, "total": total},
         )
         session.commit()
-        return _orden_dict(nueva_orden, items_creados, tomada_por_nombre=current_user.username)
+        punto = session.get(PuntoVenta, punto_id)
+        return _orden_dict(
+            nueva_orden,
+            items_creados,
+            tomada_por_nombre=current_user.username,
+            punto_nombre=punto.nombre if punto else None,
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -172,6 +181,7 @@ def listar_ordenes(
     session = Session()
     try:
         effective_punto_id = resolver_punto_id(session, current_user, punto_id)
+        punto = session.get(PuntoVenta, effective_punto_id)
         ordenes = session.execute(
             select(Orden)
             .where(Orden.punto_id == effective_punto_id)
@@ -191,7 +201,11 @@ def listar_ordenes(
             items = session.execute(
                 select(OrdenItem).where(OrdenItem.orden_id == o.id)
             ).scalars().all()
-            result.append(_orden_dict(o, items, tomada_por_nombre=nombres_por_usuario.get(o.tomada_por)))
+            result.append(_orden_dict(
+                o, items,
+                tomada_por_nombre=nombres_por_usuario.get(o.tomada_por),
+                punto_nombre=punto.nombre if punto else None,
+            ))
         return result
     finally:
         session.close()
