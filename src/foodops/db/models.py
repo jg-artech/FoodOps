@@ -1,6 +1,6 @@
 """Modelos SQLAlchemy para BD"""
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, CheckConstraint, ForeignKey, Enum, Text, JSON, BigInteger, TIMESTAMP, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, CheckConstraint, ForeignKey, Enum, Text, JSON, BigInteger, TIMESTAMP, UniqueConstraint, Index, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -59,6 +59,14 @@ class PuntoVenta(Base):
     telefono = Column(String(20))
     activo = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Impresión por agente de tienda (docs/DISENO_IMPRESION.md §3). El token
+    # del agente NO va aquí: vive en tokens_agente.
+    impresora_ip = Column(String(45), nullable=True)
+    impresora_puerto = Column(Integer, nullable=False, default=9100, server_default="9100")
+    impresora_activa = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Si es False, nunca se generan trabajos ABRIR_CAJON para esta tienda.
+    cajon_activo = Column(Boolean, nullable=False, default=False, server_default="false")
     
     empresa = relationship("Empresa", back_populates="puntos")
     usuarios = relationship("Usuario", back_populates="punto")
@@ -199,3 +207,83 @@ class AuditLog(Base):
     detalle = Column(JSON, nullable=True)
     ip = Column(String(45), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Impresión por agente de tienda (docs/DISENO_IMPRESION.md §5, §6)
+# ---------------------------------------------------------------------------
+# tipo/estado son String + CHECK, no Enum nativo: misma convención que
+# ordenes.estado_cobro (migración 011), evita ALTER TYPE y la confusión
+# nombre/valor del Enum de SQLAlchemy.
+
+TRABAJO_TIPO_TICKET = "ticket"
+TRABAJO_TIPO_ABRIR_CAJON = "abrir_cajon"
+
+TRABAJO_ESTADO_PENDIENTE = "pendiente"
+TRABAJO_ESTADO_IMPRIMIENDO = "imprimiendo"
+TRABAJO_ESTADO_OK = "ok"
+TRABAJO_ESTADO_ERROR = "error"
+
+# Motivo fijo del trabajo ABRIR_CAJON que crea confirmar-cobro.
+MOTIVO_CAJON_COBRO_EFECTIVO = "cobro_efectivo"
+
+
+class TrabajoImpresion(Base):
+    __tablename__ = "trabajos_impresion"
+
+    id = Column(BigInteger, primary_key=True)
+    punto_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=False)
+    tipo = Column(String(20), nullable=False)
+    # JSON estructurado, NUNCA HTML: el agente arma el ESC/POS.
+    payload = Column(JSON, nullable=False, default=dict)
+    estado = Column(String(20), nullable=False, default=TRABAJO_ESTADO_PENDIENTE)
+    solicitado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    # Obligatorio para ABRIR_CAJON manual; "cobro_efectivo" para el automático.
+    motivo = Column(String(200), nullable=True)
+    orden_id = Column(Integer, ForeignKey("ordenes.id"), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    tomado_at = Column(DateTime, nullable=True)
+    completado_at = Column(DateTime, nullable=True)
+    error = Column(Text, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("tipo IN ('ticket', 'abrir_cajon')", name="ck_trabajos_impresion_tipo"),
+        CheckConstraint(
+            "estado IN ('pendiente', 'imprimiendo', 'ok', 'error')",
+            name="ck_trabajos_impresion_estado",
+        ),
+        Index("ix_trabajos_impresion_punto_estado", "punto_id", "estado"),
+        Index("ix_trabajos_impresion_orden", "orden_id"),
+        # A lo sumo un ABRIR_CAJON por orden, también a nivel de BD.
+        Index(
+            "ux_trabajos_impresion_cajon_por_orden",
+            "orden_id",
+            unique=True,
+            postgresql_where=text("tipo = 'abrir_cajon' AND orden_id IS NOT NULL"),
+        ),
+    )
+
+
+class TokenAgente(Base):
+    __tablename__ = "tokens_agente"
+
+    id = Column(Integer, primary_key=True)
+    punto_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True)  # sha256 hex
+    activo = Column(Boolean, nullable=False, default=True)
+    creado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    revocado_at = Column(DateTime, nullable=True)
+    # Heartbeat: se actualiza en cada request autenticado del agente.
+    ultima_conexion_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_tokens_agente_punto_activo", "punto_id", "activo"),
+        Index(
+            "ux_tokens_agente_punto_unico_activo",
+            "punto_id",
+            unique=True,
+            postgresql_where=text("activo = true"),
+        ),
+    )
