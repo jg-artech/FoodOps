@@ -543,6 +543,23 @@ def crear_transaccion(
     session = Session()
     try:
         punto_id = exigir_punto_propio(current_user)
+
+        # Todo cobro en efectivo tiene que venir de una orden ya creada
+        # (PENDIENTE_RECIBIR hasta que el responsable confirme, ver
+        # confirmar_cobro_efectivo) - sin esto, cualquier rol de
+        # _ROLES_OPERACION podía crear una TransaccionVenta en efectivo sin
+        # orden asociada, y _calcular_efectivo_esperado() la contaba de
+        # inmediato sin que nadie confirmara haber recibido el dinero
+        # (hotfix: ver docs/AUDITORIA_COBRO_EFECTIVO.md, reproducido en la
+        # revisión del 2026-10-18 con una transacción de Q777 sin orden_id).
+        # Tarjeta/transferencia sin orden_id no cambian: no hay recepción
+        # física de efectivo que confirmar en esos métodos.
+        if req.metodo_pago == MetodoPago.EFECTIVO and req.orden_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Un cobro en efectivo debe registrarse como orden primero (POST /api/ordenes/)",
+            )
+
         # orden_id viene del cliente: sin esto se podría colgar una venta de
         # esta tienda de una orden de otra.
         if req.orden_id is not None:
