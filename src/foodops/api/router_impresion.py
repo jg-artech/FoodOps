@@ -83,6 +83,11 @@ ROLES_TOKEN_AGENTE = ("admin", "gerente_general")
 TIMEOUT_IMPRIMIENDO = timedelta(seconds=30)
 # Agente "conectado" si hizo un request en esta ventana (§7, decisión 7).
 VENTANA_CONEXION_AGENTE = timedelta(seconds=30)
+# Un ABRIR_CAJON con más de esto desde su creación ya no se ejecuta: abrir la
+# gaveta minutos después del cobro (agente que vuelve de estar apagado, o un
+# reintento tardío) la deja abierta sin nadie que la espere (§5).
+CADUCIDAD_CAJON = timedelta(seconds=120)
+ERROR_CADUCADO = "caducado"
 
 MOTIVO_MIN_CARACTERES = 5
 
@@ -160,6 +165,14 @@ def _payload_ticket(session, orden: Orden, punto: PuntoVenta) -> dict:
     }
 
 
+def _cajon_caducado(t: TrabajoImpresion, ahora: datetime) -> bool:
+    return (
+        t.tipo == TRABAJO_TIPO_ABRIR_CAJON
+        and t.created_at is not None
+        and ahora - t.created_at > CADUCIDAD_CAJON
+    )
+
+
 def _get_punto_activo(session, punto_id: int) -> PuntoVenta:
     punto = session.get(PuntoVenta, punto_id)
     if punto is None or not punto.activo:
@@ -178,6 +191,9 @@ def agente_pendientes(agente: AgenteData = Depends(requiere_agente)):
 
     FOR UPDATE SKIP LOCKED: si por error corren dos agentes con el mismo
     token, no reciben el mismo trabajo a la vez.
+
+    Un ABRIR_CAJON de hace más de 120s no se entrega: pasa a ERROR con
+    error="caducado" y el agente nunca recibe el pulso.
     """
     session = Session()
     try:
@@ -203,11 +219,26 @@ def agente_pendientes(agente: AgenteData = Depends(requiere_agente)):
             .with_for_update(skip_locked=True)
         ).scalars().all()
 
+        entregar = []
         for t in trabajos:
+            if _cajon_caducado(t, ahora):
+                t.estado = TRABAJO_ESTADO_ERROR
+                t.error = ERROR_CADUCADO
+                t.completado_at = ahora
+                registrar_auditoria(
+                    session,
+                    accion="ABRIR_CAJON_CADUCADO",
+                    entidad="trabajo_impresion",
+                    entidad_id=t.id,
+                    punto_id=t.punto_id,
+                    detalle={"orden_id": t.orden_id, "created_at": str(t.created_at)},
+                )
+                continue
             t.estado = TRABAJO_ESTADO_IMPRIMIENDO
             t.tomado_at = ahora
+            entregar.append(t)
         session.commit()
-        return [_trabajo_dict(t, incluir_payload=True) for t in trabajos]
+        return [_trabajo_dict(t, incluir_payload=True) for t in entregar]
     finally:
         session.close()
 
@@ -427,6 +458,12 @@ def reintentar_trabajo(
             raise HTTPException(status_code=403, detail="Solo quien lo creó o la gerencia")
         if trabajo.estado != TRABAJO_ESTADO_ERROR:
             raise HTTPException(status_code=409, detail="Solo se reintentan trabajos en error")
+        if _cajon_caducado(trabajo, datetime.utcnow()):
+            # Reencolarlo no serviría: caducaría en el siguiente poll.
+            raise HTTPException(
+                status_code=409,
+                detail="Apertura de cajón caducada: use el botón Abrir cajón con motivo",
+            )
         if trabajo.tipo == TRABAJO_TIPO_ABRIR_CAJON:
             punto = _get_punto_activo(session, trabajo.punto_id)
             if not punto.cajon_activo:
