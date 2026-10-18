@@ -9,6 +9,7 @@ import json
 import logging
 import logging.handlers
 import os
+import re
 import socket
 import sys
 import time
@@ -46,6 +47,36 @@ LOG_MAX_BYTES = 5 * 1024 * 1024
 LOG_RESPALDOS = 4
 _FORMATO_LOG = "%(asctime)s %(levelname)s %(message)s"
 
+# Valores que nunca deben salir en el log (el token del agente). Se
+# registran en main() apenas se lee la configuración.
+_SECRETOS: set[str] = set()
+
+
+def registrar_secreto(valor: str) -> None:
+    for v in (valor, valor.strip()):
+        if v:
+            _SECRETOS.add(v)
+
+
+def ocultar_secretos(texto: str) -> str:
+    # Primero los más largos, por si uno contiene a otro.
+    for secreto in sorted(_SECRETOS, key=len, reverse=True):
+        texto = texto.replace(secreto, "***")
+    return texto
+
+
+class _FormatoSinSecretos(logging.Formatter):
+    """Defensa en profundidad: aunque una excepción de una librería incluya
+    el token en su mensaje (p. ej. http.client con un header inválido), la
+    línea del log, traceback incluido, sale con *** en su lugar."""
+
+    def format(self, record):
+        return ocultar_secretos(super().format(record))
+
+
+# Caracteres de secrets.token_urlsafe (lo que genera el backend).
+_TOKEN_VALIDO = re.compile(r"^[A-Za-z0-9_-]+$")
+
 
 def configurar_log(env=None) -> Optional[str]:
     """Dónde escribe el agente su log.
@@ -79,7 +110,7 @@ def configurar_log(env=None) -> Optional[str]:
         sys.excepthook = _excepcion_no_capturada
     else:
         handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(_FORMATO_LOG))
+    handler.setFormatter(_FormatoSinSecretos(_FORMATO_LOG))
     raiz.addHandler(handler)
     raiz.setLevel(logging.INFO)
     return archivo
@@ -107,10 +138,20 @@ class Config:
         faltan = [v for v in requeridas if not env.get(v)]
         if faltan:
             raise ConfigError("Faltan variables de entorno: " + ", ".join(faltan))
+        # Un token pegado con espacios o un salto de línea al final haría que
+        # http.client rechace el header con un error que INCLUYE el valor:
+        # se limpian los extremos y, si aún tiene caracteres fuera de los
+        # que genera el backend, se rechaza sin mostrarlo.
+        token = env["FOODOPS_AGENTE_TOKEN"].strip()
+        if not _TOKEN_VALIDO.match(token):
+            raise ConfigError(
+                "FOODOPS_AGENTE_TOKEN tiene espacios o caracteres no válidos; "
+                "vuelva a copiarlo tal como lo entregó el sistema"
+            )
         try:
             return cls(
                 api_url=env["FOODOPS_API_URL"].rstrip("/"),
-                token=env["FOODOPS_AGENTE_TOKEN"],
+                token=token,
                 impresora_ip=env["FOODOPS_IMPRESORA_IP"],
                 impresora_puerto=int(env.get("FOODOPS_IMPRESORA_PUERTO", 9100)),
                 poll_segundos=float(env.get("FOODOPS_POLL_SEGUNDOS", 5)),
@@ -270,7 +311,7 @@ class Agente:
             estado, error = "ok", None
             log.info("Trabajo %s (%s) impreso", tid, trabajo.get("tipo"))
         except Exception as e:
-            estado, error = "error", f"{type(e).__name__}: {e}"
+            estado, error = "error", ocultar_secretos(f"{type(e).__name__}: {e}")
             log.error("Trabajo %s (%s) falló: %s", tid, trabajo.get("tipo"), error)
         if estado == "ok":
             # Antes de reportar: si el agente muere ahora, al reiniciar no
@@ -309,6 +350,10 @@ class Agente:
 
 def main() -> int:
     configurar_log()
+    # Antes de validar nada: si el token llega a aparecer en algún mensaje,
+    # el log lo muestra como ***.
+    if os.environ.get("FOODOPS_AGENTE_TOKEN"):
+        registrar_secreto(os.environ["FOODOPS_AGENTE_TOKEN"])
     try:
         config = Config.desde_entorno()
     except ConfigError as e:

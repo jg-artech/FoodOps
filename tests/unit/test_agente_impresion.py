@@ -487,3 +487,100 @@ def test_log_es_rotativo(tmp_path, logging_aislado):
     (h,) = logging.getLogger().handlers
     assert isinstance(h, logging.handlers.RotatingFileHandler)
     assert h.maxBytes == LOG_MAX_BYTES and h.backupCount == LOG_RESPALDOS
+
+
+# ---------------------------------------------------------------------------
+# El token nunca llega al log
+# ---------------------------------------------------------------------------
+
+TOKEN_PRUEBA = "TOKEN-DE-PRUEBA-a1b2c3d4e5"
+
+
+@pytest.fixture
+def secretos_aislados():
+    from agente_impresion import agente
+
+    antes = set(agente._SECRETOS)
+    yield
+    agente._SECRETOS.clear()
+    agente._SECRETOS.update(antes)
+
+
+def test_error_no_controlado_no_escribe_el_token(tmp_path, logging_aislado, secretos_aislados):
+    """Error no controlado cuyo mensaje incluye el token: el log lo oculta, y
+    el traceback no vuelca variables locales."""
+    from agente_impresion.agente import configurar_log, registrar_secreto
+
+    destino = tmp_path / "agente.log"
+    configurar_log({"FOODOPS_ARCHIVO_LOG": str(destino)})
+    registrar_secreto(TOKEN_PRUEBA)
+
+    def falla():
+        config_local = "VALOR-LOCAL-NO-DEBE-SALIR"  # noqa: F841 - prueba de locals
+        raise RuntimeError(f"fallo con Bearer {TOKEN_PRUEBA}")
+
+    try:
+        falla()
+    except RuntimeError:
+        sys.excepthook(*sys.exc_info())
+    contenido = _leer(destino)
+    assert "Error no controlado" in contenido and "RuntimeError" in contenido
+    assert TOKEN_PRUEBA not in contenido
+    assert "Bearer ***" in contenido
+    assert "VALOR-LOCAL-NO-DEBE-SALIR" not in contenido
+
+
+def test_header_invalido_no_filtra_el_token(tmp_path, logging_aislado, secretos_aislados):
+    """Camino real encontrado: un token con salto de línea hace que
+    http.client lance 'Invalid header value b"Bearer <token>\\n"', que el
+    agente registra como 'Sin conexión'. El log debe mostrar ***."""
+    from agente_impresion.agente import ApiCliente, configurar_log, registrar_secreto
+
+    destino = tmp_path / "agente.log"
+    configurar_log({"FOODOPS_ARCHIVO_LOG": str(destino)})
+    token_sucio = TOKEN_PRUEBA + "\n"
+    registrar_secreto(token_sucio)
+    cfg = _config(api_url="http://127.0.0.1:9", token=token_sucio)
+
+    def dormir(_):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        Agente(cfg, ApiCliente(cfg), ImpresoraMock()).correr(dormir=dormir)
+    contenido = _leer(destino)
+    assert "Sin conexión con el backend" in contenido
+    assert TOKEN_PRUEBA not in contenido
+
+
+def test_token_se_limpia_y_se_valida_sin_mostrarlo():
+    base = {"FOODOPS_API_URL": "http://x", "FOODOPS_IMPRESORA_IP": "i"}
+    c = Config.desde_entorno({**base, "FOODOPS_AGENTE_TOKEN": f"  {TOKEN_PRUEBA}\r\n"})
+    assert c.token == TOKEN_PRUEBA
+    for malo in (f"{TOKEN_PRUEBA} extra", f"{TOKEN_PRUEBA}\x00", "token/con/barras"):
+        with pytest.raises(ConfigError) as e:
+            Config.desde_entorno({**base, "FOODOPS_AGENTE_TOKEN": malo})
+        assert TOKEN_PRUEBA not in str(e.value) and "barras" not in str(e.value)
+
+
+def test_proceso_real_con_token_invalido_no_lo_escribe(tmp_path):
+    """python -m agente_impresion de verdad, con log a archivo: token con un
+    espacio en medio -> sale con 2 y el log no contiene el token."""
+    import os
+    import subprocess
+
+    destino = tmp_path / "agente.log"
+    env = {k: v for k, v in os.environ.items() if not k.startswith("FOODOPS_")}
+    env.update({
+        "FOODOPS_API_URL": "http://127.0.0.1:9",
+        "FOODOPS_AGENTE_TOKEN": f"{TOKEN_PRUEBA} copiado-mal",
+        "FOODOPS_IMPRESORA_IP": "127.0.0.1",
+        "FOODOPS_ARCHIVO_LOG": str(destino),
+        "LOCALAPPDATA": str(tmp_path),
+    })
+    r = subprocess.run([sys.executable, "-m", "agente_impresion"],
+                       cwd=Path(__file__).resolve().parents[2] / "tools",
+                       env=env, capture_output=True, text=True, timeout=30)
+    assert r.returncode == 2
+    contenido = destino.read_text(encoding="utf-8")
+    assert "FOODOPS_AGENTE_TOKEN tiene espacios o caracteres no válidos" in contenido
+    assert TOKEN_PRUEBA not in contenido + r.stdout + r.stderr
