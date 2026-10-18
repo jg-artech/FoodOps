@@ -10,7 +10,15 @@ const api = axios.create({
 // Rutas con semántica propia de tienda, que no deben recibir el selector
 // global: las reglas de abastecimiento usan punto_venta_id NULL como "regla
 // global" y las vistas centrales trabajan sobre todas las tiendas a la vez.
-const SIN_SELECTOR_GLOBAL = ['/api/reglas-reabastecimiento', '/api/abastecimiento', '/api/puntos-venta']
+const SIN_SELECTOR_GLOBAL = [
+  '/api/reglas-reabastecimiento',
+  '/api/abastecimiento',
+  '/api/puntos-venta',
+  // El panel de usuarios maneja su propio filtro de tienda; si no se
+  // excluye aquí, el selector global filtraría el listado sin que la
+  // pantalla lo muestre, y "Todas las tiendas" dejaría de funcionar.
+  '/api/auth/usuarios',
+]
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
