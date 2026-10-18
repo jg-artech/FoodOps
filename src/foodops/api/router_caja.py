@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, create_engine, func, or_, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
@@ -183,25 +183,28 @@ def _calcular_efectivo_esperado(session, caja: CajaDiaria) -> Decimal:
     # nunca se tocaba al cancelar - eso también queda arreglado aquí, de
     # paso, al excluir Orden.estado == CANCELADO).
     #
-    # TransaccionVenta.orden_id es nullable (ventas tipo "iniciativa" sin
-    # orden asociada, fuera del alcance de este cambio): esas se siguen
-    # contando igual que siempre (LEFT JOIN + orden_id IS NULL).
+    # HOTFIX 2026-10-18: ya NO se admite la rama "orden_id IS NULL". Esa
+    # rama dejaba crear una TransaccionVenta en efectivo sin ninguna orden
+    # asociada (POST /transacciones/ con orden_id omitido) y que igual
+    # contara de inmediato en el cuadre - sin pasar nunca por
+    # PENDIENTE_RECIBIR ni por confirmar-cobro. crear_transaccion() ahora
+    # rechaza esa combinación con 400 (ver router_ordenes.py), así que de
+    # aquí en adelante no deberían crearse transacciones huérfanas nuevas;
+    # las que ya existieran de antes (si las hay) simplemente dejan de
+    # contar, igual que una orden PENDIENTE_RECIBIR o CANCELADA - no se
+    # borran ni se tocan, solo se excluyen de la suma (INNER JOIN: sin
+    # Orden asociada, la fila no entra en el resultado).
     ventas_efectivo = session.execute(
         select(func.coalesce(func.sum(TransaccionVenta.precio_venta), 0))
         .select_from(TransaccionVenta)
-        .outerjoin(Orden, Orden.id == TransaccionVenta.orden_id)
+        .join(Orden, Orden.id == TransaccionVenta.orden_id)
         .where(
             TransaccionVenta.punto_id == caja.punto_id,
             TransaccionVenta.metodo_pago == "efectivo",
             TransaccionVenta.created_at >= day_start,
             TransaccionVenta.created_at < day_end,
-            or_(
-                TransaccionVenta.orden_id.is_(None),
-                and_(
-                    Orden.estado_cobro == ESTADO_COBRO_COBRADA,
-                    Orden.estado != OrdenEstado.CANCELADO,
-                ),
-            ),
+            Orden.estado_cobro == ESTADO_COBRO_COBRADA,
+            Orden.estado != OrdenEstado.CANCELADO,
         )
     ).scalar_one()
 
