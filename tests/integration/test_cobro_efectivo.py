@@ -18,6 +18,7 @@ import uuid
 from datetime import date, datetime
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from foodops.core.auth import create_access_token, hash_password
@@ -400,5 +401,205 @@ def test_cuadre_no_incluye_ventas_pendientes_ni_canceladas(engine, datos):
 
     esperado = _calcular_efectivo_esperado(s, caja)
     assert esperado == 100
+
+    s.close()
+
+
+# ---------------------------------------------------------------------------
+# HOTFIX 2026-10-18: POST /transacciones/ ya no admite efectivo sin orden_id.
+# Ver docs/AUDITORIA_COBRO_EFECTIVO.md - la falla original se reprodujo con
+# una TransaccionVenta de Q777 sin orden_id que sumaba al cuadre sin pasar
+# nunca por confirmar-cobro. Tienda propia, aislada del resto.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def tienda_hotfix(engine):
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    empresa = Empresa(nombre="Hotfix Cuadre Test", nit="TEST-CE-3")
+    s.add(empresa)
+    s.flush()
+    tienda = PuntoVenta(empresa_id=empresa.id, nombre="Tienda Hotfix")
+    s.add(tienda)
+    s.flush()
+
+    def usuario(username, rol):
+        u = Usuario(
+            empresa_id=empresa.id,
+            punto_id=tienda.id,
+            username=username,
+            email=f"{username}@test.gt",
+            password_hash=hash_password("secreta123"),
+            rol=rol,
+        )
+        s.add(u)
+        return u
+
+    vendedor = usuario("hf_vendedor", UserRol.TOMADOR_ORDEN)
+    responsable = usuario("hf_responsable", UserRol.RESP_TIENDA)
+    s.commit()
+
+    def credenciales(u: Usuario) -> dict:
+        return {
+            "user_id": u.id,
+            "username": u.username,
+            "punto_id": u.punto_id,
+            "rol": u.rol.value,
+            "empresa_id": u.empresa_id,
+        }
+
+    out = {
+        "tienda": tienda.id,
+        "vendedor": credenciales(vendedor),
+        "responsable": credenciales(responsable),
+    }
+    s.close()
+    yield out
+
+
+def _payload_transaccion(metodo_pago, *, orden_id=None, precio_venta=777):
+    return {
+        "orden_id": orden_id,
+        "metodo_pago": metodo_pago,
+        "precio_venta": precio_venta,
+        "items": [
+            {
+                "nombre": "Prueba hotfix",
+                "cantidad": 1,
+                "unidad": "pieza",
+                "precio_unitario": precio_venta,
+                "subtotal": precio_venta,
+            }
+        ],
+    }
+
+
+def test_tomador_orden_efectivo_sin_orden_id_rechazado(api, tienda_hotfix):
+    r = api.post(
+        "/api/ordenes/transacciones/",
+        json=_payload_transaccion("efectivo"),
+        headers=_auth(tienda_hotfix["vendedor"]),
+    )
+    assert r.status_code == 400
+    assert "orden" in r.json()["detail"].lower()
+
+
+def test_resp_tienda_efectivo_sin_orden_id_rechazado(api, tienda_hotfix):
+    """Bloqueado para todos los roles, no solo tomador_orden - "todo cobro
+    en efectivo se registra como orden" no tiene excepción de rol."""
+    r = api.post(
+        "/api/ordenes/transacciones/",
+        json=_payload_transaccion("efectivo"),
+        headers=_auth(tienda_hotfix["responsable"]),
+    )
+    assert r.status_code == 400
+
+
+def test_tarjeta_sin_orden_id_sigue_funcionando(api, tienda_hotfix):
+    r = api.post(
+        "/api/ordenes/transacciones/",
+        json=_payload_transaccion("tarjeta"),
+        headers=_auth(tienda_hotfix["vendedor"]),
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_transferencia_sin_orden_id_sigue_funcionando(api, tienda_hotfix):
+    r = api.post(
+        "/api/ordenes/transacciones/",
+        json=_payload_transaccion("transferencia"),
+        headers=_auth(tienda_hotfix["vendedor"]),
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_transaccion_huerfana_historica_no_suma_al_cuadre(engine, tienda_hotfix):
+    """Reproduce el caso de la Q777 original: como la vía de creación ya
+    está bloqueada (test de arriba), la única forma de tener una
+    TransaccionVenta en efectivo sin orden es que ya existiera de antes
+    (dato histórico) - se inserta directo para simular eso, sin pasar por
+    el endpoint, y se confirma que _calcular_efectivo_esperado() la
+    ignora (INNER JOIN con Orden: sin fila asociada, no entra a la suma)."""
+    from foodops.api.router_caja import _calcular_efectivo_esperado
+    from foodops.db.models import TransaccionVenta
+    from foodops.db.models_caja import CajaDiaria
+
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    punto_id = tienda_hotfix["tienda"]
+
+    s.add(TransaccionVenta(
+        punto_id=punto_id,
+        orden_id=None,
+        metodo_pago="efectivo",
+        precio_venta=777,
+    ))
+    s.commit()
+
+    caja = CajaDiaria(
+        punto_id=punto_id,
+        fecha=date.today(),
+        fondo_inicial=0,
+        estado="abierta",
+        abierta_por=tienda_hotfix["responsable"]["user_id"],
+    )
+    s.add(caja)
+    s.commit()
+
+    esperado = _calcular_efectivo_esperado(s, caja)
+    assert esperado == 0  # la huérfana de Q777 no debe sumar
+
+    s.close()
+
+
+def test_cobro_normal_sigue_sumando_en_el_cuadre(api, tienda_hotfix, engine):
+    """No-regresión: el camino feliz (orden -> confirmar-cobro) no se vio
+    afectado por quitar la rama orden_id IS NULL."""
+    from foodops.api.router_caja import _calcular_efectivo_esperado
+    from foodops.db.models import TransaccionVenta
+    from foodops.db.models_caja import CajaDiaria
+
+    orden_id = _insertar_orden(
+        engine, tienda_hotfix["tienda"], estado_cobro="pendiente_recibir", total=120
+    )
+    r = api.post(
+        f"/api/ordenes/{orden_id}/confirmar-cobro",
+        json={"monto_recibido": 120, "vuelto_entregado": 0},
+        headers=_auth(tienda_hotfix["responsable"]),
+    )
+    assert r.status_code == 200
+    assert r.json()["estado_cobro"] == "cobrada"
+
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    s.add(TransaccionVenta(
+        punto_id=tienda_hotfix["tienda"],
+        orden_id=orden_id,
+        metodo_pago="efectivo",
+        precio_venta=120,
+    ))
+    # Reutiliza la caja de este módulo/tienda/fecha si ya existe (la crea
+    # test_transaccion_huerfana_historica_no_suma_al_cuadre) - uq_cajas_
+    # punto_fecha no deja más de una por tienda y día.
+    caja = s.execute(
+        select(CajaDiaria).where(
+            CajaDiaria.punto_id == tienda_hotfix["tienda"],
+            CajaDiaria.fecha == date.today(),
+        )
+    ).scalars().first()
+    if caja is None:
+        caja = CajaDiaria(
+            punto_id=tienda_hotfix["tienda"],
+            fecha=date.today(),
+            fondo_inicial=0,
+            estado="abierta",
+            abierta_por=tienda_hotfix["responsable"]["user_id"],
+        )
+        s.add(caja)
+    s.commit()
+
+    esperado = _calcular_efectivo_esperado(s, caja)
+    assert esperado == 120
 
     s.close()
