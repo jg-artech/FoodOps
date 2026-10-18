@@ -247,6 +247,23 @@ def test_gerente_general_ve_las_ordenes_de_cualquier_tienda(api, datos):
     assert {o["numero_orden"] for o in r.json()} == {"ORD-JORDAN-1"}
 
 
+def test_gerente_general_sin_punto_id_ve_las_ordenes_de_todas_las_tiendas(api, datos):
+    """Bug reportado 2026-10-18: GET /api/ordenes/ sin ?punto_id= caía en
+    silencio a la tienda propia del usuario en vez de "todas". En el
+    frontend esto se veía como: elegir en el selector una tienda sin
+    órdenes y volver a "Todas las tiendas" no mostraba las demás órdenes
+    (porque "todas" nunca existió para este endpoint, solo la tienda de
+    casa del usuario)."""
+    gg = datos["gerente_general"]
+    r = api.get("/api/ordenes/", headers=_auth(gg))
+    assert r.status_code == 200
+    # Subset, no igualdad exacta: otros tests del mismo módulo crean órdenes
+    # adicionales en Centro sobre este fixture compartido (scope="module").
+    numeros = {o["numero_orden"] for o in r.json()}
+    assert {"ORD-CENTRO-1", "ORD-JORDAN-1"} <= numeros
+    assert all(o["punto_id"] in (datos["centro"], datos["jordan"]) for o in r.json())
+
+
 def test_gerente_general_sin_punto_id_recibe_todas_las_tiendas(api, datos):
     r = api.get("/api/auth/usuarios", headers=_auth(datos["gerente_general"]))
     assert r.status_code == 200
