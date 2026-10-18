@@ -13,6 +13,7 @@
       <RouterLink v-if="esGerenteCentral" to="/central/abastecimiento" class="hover:underline">🚚 Abastecimiento</RouterLink>
       <RouterLink v-if="esGerenteGeneral" to="/central/reglas" class="hover:underline">⚙️ Reglas Abastecimiento</RouterLink>
       <RouterLink v-if="esGerenteGeneral" to="/central/puntos" class="hover:underline">🏪 Puntos de Venta</RouterLink>
+      <RouterLink v-if="esGerenteGeneral" to="/admin/usuarios" class="hover:underline">👥 Usuarios</RouterLink>
       <RouterLink to="/cocina" target="_blank" class="hover:underline">Cocina</RouterLink>
       <SelectorTienda />
       <span class="opacity-80">{{ auth.user?.username }}</span>

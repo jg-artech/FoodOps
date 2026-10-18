@@ -20,6 +20,7 @@ import AbastecimientoView from '@/views/AbastecimientoView.vue'
 import InventarioDiarioView from '@/views/InventarioDiarioView.vue'
 import ReglasReabastecimientoView from '@/views/ReglasReabastecimientoView.vue'
 import PuntosVentaView from '@/views/PuntosVentaView.vue'
+import UsuariosView from '@/views/UsuariosView.vue'
 
 
 // Roles que el backend ya exige para los endpoints de cada sección. Tenerlos
@@ -52,6 +53,7 @@ const routes = [
   { path: '/central/abastecimiento', component: AbastecimientoView, meta: { requiresAuth: true, roles: ROLES_CENTRAL } },
   { path: '/central/reglas', component: ReglasReabastecimientoView, meta: { requiresAuth: true, roles: ROLES_GERENCIA } },
   { path: '/central/puntos', component: PuntosVentaView, meta: { requiresAuth: true, roles: ROLES_GERENCIA } },
+  { path: '/admin/usuarios', component: UsuariosView, meta: { requiresAuth: true, roles: ROLES_GERENCIA } },
   { path: '/pos/inventario-diario', component: InventarioDiarioView, meta: { requiresAuth: true } },
 ]
 
