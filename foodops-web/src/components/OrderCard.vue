@@ -47,7 +47,8 @@
       <span class="font-bold text-orange-500">Q{{ orden.total.toFixed(2) }}</span>
       <div class="flex gap-2">
         <button
-          @click="imprimirTicket(orden)"
+          @click="impresion.imprimir(orden)"
+          :disabled="impresion.enviando"
           title="Reimprimir ticket"
           class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded font-medium"
         >
@@ -56,19 +57,24 @@
         <slot name="acciones" />
       </div>
     </div>
+    <EstadoImpresionTicket :impresion="impresion" />
+    <HistorialImpresion :orden-id="orden.id" />
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, reactive } from 'vue'
 import { getMenu } from '@/data/menu.js'
-import { imprimirTicket } from '@/utils/ticket.js'
+import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
+import HistorialImpresion from '@/components/HistorialImpresion.vue'
+import { useImpresionTicket } from '@/utils/impresionTicket.js'
 
 const props = defineProps({
   orden: { type: Object, required: true },
 })
 
 const menuItems = getMenu()
+const impresion = reactive(useImpresionTicket())
 
 function getContenido(nombreProducto) {
   const found = menuItems.find(m => nombreProducto === m.nombre || nombreProducto.startsWith(m.nombre))
