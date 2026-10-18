@@ -14,8 +14,6 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.abspath(os.path.join(current_dir, '../../..'))
 sys.path.insert(0, os.path.join(root_dir, 'src'))
 
-print(f"DEBUG: sys.path = {sys.path[0]}")
-
 # Importar Base
 try:
     from foodops.db.models import Base
@@ -32,7 +30,6 @@ config = context.config
 
 # Obtener database URL desde .env
 database_url = os.getenv("DATABASE_SYNC_URL")
-print(f"DEBUG: DATABASE_SYNC_URL = {database_url}")
 
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
