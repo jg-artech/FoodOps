@@ -97,7 +97,40 @@ otra vez.
 `tests/unit/test_agente_impresion.py`, con impresora mock (en memoria y un
 servidor TCP en 127.0.0.1). Ninguna prueba toca una impresora real.
 
+## Arranque automático en Windows (tarea programada)
+
+`instalar_tarea.ps1` crea (o reemplaza) la tarea programada
+`FoodOpsAgenteImpresion`, que arranca el agente al iniciar sesión el usuario
+que la instala:
+
+```
+cd <carpeta>\tools\agente_impresion
+powershell -ExecutionPolicy Bypass -File .\instalar_tarea.ps1
+powershell -ExecutionPolicy Bypass -File .\instalar_tarea.ps1 -PythonExe "C:\ruta\python.exe"
+powershell -ExecutionPolicy Bypass -File .\instalar_tarea.ps1 -Desinstalar
+```
+
+- Antes de instalarla, defina las variables obligatorias como variables de
+  entorno **de su cuenta de usuario** (la tarea no ve las de una ventana
+  de PowerShell abierta). El script solo comprueba que existan y muestra
+  su nombre, nunca el valor; si falta alguna, se detiene sin crear nada.
+- Ejecuta `python -m agente_impresion` con `tools\` como directorio de
+  trabajo y agrega la salida a `%LOCALAPPDATA%\FoodOpsAgente\agente.log`.
+- Reintenta cada minuto (hasta 999 veces) si falla, sigue con batería y no
+  tiene límite de tiempo.
+- Arranca al **iniciar sesión**: la PC tiene que entrar sola a la cuenta de
+  Windows (inicio de sesión automático) o alguien tiene que iniciar sesión
+  después de cada reinicio.
+- La ventana de consola del agente queda abierta: no la cierre. Si se
+  cierra, el agente se detiene; no está verificado si el reintento de la
+  tarea lo vuelve a arrancar. Para relanzarlo: `Start-ScheduledTask
+  -TaskName FoodOpsAgenteImpresion` o cerrar e iniciar sesión.
+- El log crece sin límite; revíselo o vacíelo de vez en cuando.
+
+**No probado en Windows todavía**: solo se revisó la sintaxis y que los
+parámetros de los cmdlets existan. Ver `docs/RUNBOOK_ACTIVAR_CENTRO.md`.
+
 ## Pendiente (fase de empaquetado)
 
-Ejecutable Windows (`pyinstaller`), instalación como servicio y arranque
-automático.
+Ejecutable Windows (`pyinstaller`) y, si hace falta que corra sin sesión
+iniciada, instalación como servicio.
