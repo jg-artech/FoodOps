@@ -4,9 +4,11 @@
       <h1 class="text-2xl font-bold text-gray-800">Cobros Pendientes</h1>
       <RouterLink to="/caja" class="text-sm text-gray-500 hover:text-gray-700">← Caja</RouterLink>
     </div>
-    <p class="text-sm text-gray-400 mb-4">
+    <p class="text-sm text-gray-400 mb-3">
       Órdenes en efectivo entregadas por el vendedor, esperando que confirmes cuánto recibiste de verdad.
     </p>
+    <EstadoAgente class="mb-3" />
+    <AbrirCajon class="mb-4" />
 
     <div v-if="loading" class="text-center py-12 text-gray-400">Cargando...</div>
 
@@ -90,6 +92,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/services/api'
+import AbrirCajon from '@/components/AbrirCajon.vue'
+import EstadoAgente from '@/components/EstadoAgente.vue'
 
 const ordenes = ref([])
 const loading = ref(true)

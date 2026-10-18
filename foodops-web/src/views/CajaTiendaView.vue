@@ -4,6 +4,7 @@
       <h1 class="text-2xl font-bold text-gray-800">Caja y Tienda</h1>
       <RouterLink to="/dashboard" class="text-sm text-gray-500 hover:text-gray-700">← Dashboard</RouterLink>
     </div>
+    <EstadoAgente class="-mt-4 mb-4" />
 
     <div v-if="loading" class="text-center py-12 text-gray-400">Cargando...</div>
 
@@ -82,6 +83,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
+import EstadoAgente from '@/components/EstadoAgente.vue'
 
 const caja = ref(null)
 const actual = ref(null)
