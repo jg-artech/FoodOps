@@ -62,9 +62,10 @@ ESTADO_COBRO_COBRADA = "cobrada"
 # Puede confirmar la recepción de efectivo de una orden, y por eso también
 # puede cancelar una orden ya cobrada (ver actualizar_estado_orden) - el
 # vendedor no puede ninguna de las dos cosas. Mismo set de roles que
-# "ROLES_ABRIR_CAJON" en docs/DISENO_IMPRESION.md (ese documento es solo
-# diseño, no código: esta constante se define aquí sin depender de nada de
-# esa fase, que sigue sin implementarse).
+# ROLES_ABRIR_CAJON en router_impresion.py: quien confirma el cobro es quien
+# dispara la apertura automática del cajón (ver confirmar_cobro_efectivo y
+# docs/DISENO_IMPRESION.md §2, §7). Se mantienen como dos constantes para que
+# un cambio de permisos de impresión no altere quién confirma cobros.
 _ROLES_CONFIRMAR_COBRO = ("resp_tienda", "gerente_punto", "gerente_general", "admin")
 
 
