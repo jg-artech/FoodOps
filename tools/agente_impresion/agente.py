@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 from agente_impresion import escpos
@@ -22,6 +23,15 @@ log = logging.getLogger("agente_impresion")
 
 class ConfigError(Exception):
     pass
+
+
+def ruta_impresos_por_defecto() -> str:
+    """Fuera del repo y de la carpeta del ejecutable: en Windows
+    %LOCALAPPDATA%\\FoodOpsAgente, en otros sistemas ~/.local/state."""
+    base = os.environ.get("LOCALAPPDATA")
+    if base:
+        return str(Path(base) / "FoodOpsAgente" / "impresos.json")
+    return str(Path.home() / ".local" / "state" / "foodops-agente" / "impresos.json")
 
 
 @dataclass(frozen=True)
@@ -36,6 +46,7 @@ class Config:
     timeout_http: float = 10.0
     ancho_columnas: int = 42
     nombre_negocio: str = "Asados a la Leña"
+    archivo_impresos: str = field(default_factory=ruta_impresos_por_defecto)
 
     @classmethod
     def desde_entorno(cls, env=None) -> "Config":
@@ -56,6 +67,9 @@ class Config:
                 timeout_http=float(env.get("FOODOPS_TIMEOUT_HTTP", 10)),
                 ancho_columnas=int(env.get("FOODOPS_ANCHO_COLUMNAS", 42)),
                 nombre_negocio=env.get("FOODOPS_NOMBRE_NEGOCIO", "Asados a la Leña"),
+                archivo_impresos=(
+                    env.get("FOODOPS_ARCHIVO_IMPRESOS") or ruta_impresos_por_defecto()
+                ),
             )
         except ValueError as e:
             raise ConfigError(f"Variable de entorno con valor inválido: {e}") from None
@@ -111,6 +125,54 @@ class ApiCliente:
                 raise
 
 
+class RegistroImpresos:
+    """Ids de trabajos ya impresos con éxito, persistidos en un archivo local.
+
+    Idempotencia ante reinicios (docs/DISENO_IMPRESION.md §5, opción b): el
+    backend reentrega un trabajo IMPRIMIENDO a los 30s si no recibe
+    resultado. Si el agente imprimió y se reinició antes de reportar, al
+    recibirlo de nuevo lo encuentra aquí y solo reporta "ok", sin volver a
+    imprimir ni a abrir el cajón.
+
+    Se escribe DESPUÉS de imprimir y ANTES de reportar. Queda una ventana
+    mínima sin cubrir: si el proceso muere entre el envío a la impresora y
+    esta escritura, ese trabajo se imprimirá otra vez.
+    """
+
+    MAXIMO = 5000  # los más viejos ya no pueden volver a entregarse
+
+    def __init__(self, ruta: str):
+        self.ruta = Path(ruta)
+        self._ids: list[int] = []
+        try:
+            datos = json.loads(self.ruta.read_text(encoding="utf-8"))
+            self._ids = [int(i) for i in datos.get("impresos", [])]
+        except FileNotFoundError:
+            pass
+        except (ValueError, OSError, AttributeError, TypeError) as e:
+            log.warning("Registro de impresos ilegible (%s), se empieza vacío: %s", self.ruta, e)
+        self._set = set(self._ids)
+
+    def contiene(self, trabajo_id: int) -> bool:
+        return trabajo_id in self._set
+
+    def agregar(self, trabajo_id: int) -> None:
+        if trabajo_id in self._set:
+            return
+        self._ids.append(trabajo_id)
+        self._ids = self._ids[-self.MAXIMO:]
+        self._set = set(self._ids)
+        # Escritura atómica: archivo temporal + fsync + os.replace, para que
+        # un corte de luz no deje el JSON a medias.
+        self.ruta.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.ruta.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"impresos": self._ids}, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, self.ruta)
+
+
 def bytes_para_trabajo(trabajo: dict, config: Config) -> bytes:
     tipo = trabajo.get("tipo")
     if tipo == "ticket":
@@ -121,12 +183,13 @@ def bytes_para_trabajo(trabajo: dict, config: Config) -> bytes:
 
 
 class Agente:
-    def __init__(self, config: Config, api, impresora):
+    def __init__(self, config: Config, api, impresora, registro: Optional[RegistroImpresos] = None):
         self.config, self.api, self.impresora = config, api, impresora
-        # Resultados ya impresos que no se pudieron reportar (red caída). Si
-        # el backend vuelve a entregar ese trabajo (timeout de 30s), se
-        # reporta sin volver a imprimir: no duplica tickets ni abre el
-        # cajón dos veces.
+        # Persistente: sobrevive a reinicios del agente (ver RegistroImpresos).
+        self.registro = registro or RegistroImpresos(config.archivo_impresos)
+        # Resultados que no se pudieron reportar (red caída), para
+        # reintentar el reporte en el siguiente ciclo. Solo en memoria: tras
+        # un reinicio, lo impreso lo cubre self.registro.
         self._sin_reportar: dict[int, tuple[str, Optional[str]]] = {}
 
     def _reportar(self, trabajo_id: int, estado: str, error: Optional[str]) -> None:
@@ -142,6 +205,11 @@ class Agente:
 
     def procesar(self, trabajo: dict) -> str:
         tid = trabajo["id"]
+        if self.registro.contiene(tid):
+            # Ya se imprimió (quizá antes de un reinicio): solo reportar.
+            log.info("Trabajo %s ya impreso antes, se reporta sin reimprimir", tid)
+            self._reportar(tid, "ok", None)
+            return "ok"
         if tid in self._sin_reportar:
             estado, error = self._sin_reportar[tid]
             self._reportar(tid, estado, error)
@@ -153,6 +221,13 @@ class Agente:
         except Exception as e:
             estado, error = "error", f"{type(e).__name__}: {e}"
             log.error("Trabajo %s (%s) falló: %s", tid, trabajo.get("tipo"), error)
+        if estado == "ok":
+            # Antes de reportar: si el agente muere ahora, al reiniciar no
+            # vuelve a imprimirlo.
+            try:
+                self.registro.agregar(tid)
+            except OSError as e:
+                log.error("No se pudo guardar el trabajo %s como impreso: %s", tid, e)
         self._reportar(tid, estado, error)
         return estado
 
@@ -188,8 +263,9 @@ def main() -> int:
     except ConfigError as e:
         log.error("%s", e)
         return 2
-    log.info("Agente iniciado: backend %s, impresora %s:%s, poll cada %ss",
-             config.api_url, config.impresora_ip, config.impresora_puerto, config.poll_segundos)
+    log.info("Agente iniciado: backend %s, impresora %s:%s, poll cada %ss, registro %s",
+             config.api_url, config.impresora_ip, config.impresora_puerto, config.poll_segundos,
+             config.archivo_impresos)
     impresora = ImpresoraTCP(config.impresora_ip, config.impresora_puerto, config.timeout_socket)
     try:
         Agente(config, ApiCliente(config), impresora).correr()

@@ -4,8 +4,10 @@ Ninguna prueba habla con una impresora real: se usa un transporte en
 memoria y, para el código de socket, un servidor TCP local en 127.0.0.1
 que solo recibe bytes.
 """
+import json
 import socket
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
@@ -19,8 +21,10 @@ from agente_impresion.agente import (  # noqa: E402
     Config,
     ConfigError,
     ImpresoraTCP,
+    RegistroImpresos,
     TokenRechazado,
     bytes_para_trabajo,
+    ruta_impresos_por_defecto,
 )
 
 PULSO = bytes([0x1B, 0x70, 0x00, 0x19, 0xFA])
@@ -50,7 +54,10 @@ ORDEN = {
 
 
 def _config(**kw):
-    base = dict(api_url="http://backend", token="secreto", impresora_ip="10.0.0.9")
+    # Cada config con su propio registro temporal: las pruebas nunca
+    # escriben en la ruta por defecto del usuario.
+    base = dict(api_url="http://backend", token="secreto", impresora_ip="10.0.0.9",
+                archivo_impresos=str(Path(tempfile.mkdtemp()) / "impresos.json"))
     base.update(kw)
     return Config(**base)
 
@@ -146,6 +153,23 @@ def test_config_solo_por_entorno():
     assert c.api_url == "https://api.ejemplo"
     assert c.impresora_puerto == 9100 and c.poll_segundos == 5
     assert "tok" not in repr(c)
+
+
+def test_config_archivo_impresos_por_entorno():
+    c = Config.desde_entorno({
+        "FOODOPS_API_URL": "x", "FOODOPS_AGENTE_TOKEN": "t", "FOODOPS_IMPRESORA_IP": "i",
+        "FOODOPS_ARCHIVO_IMPRESOS": "/var/lib/agente/impresos.json",
+    })
+    assert c.archivo_impresos == "/var/lib/agente/impresos.json"
+
+
+def test_ruta_por_defecto_fuera_del_repo(monkeypatch):
+    repo = Path(__file__).resolve().parents[2]
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    assert repo not in Path(ruta_impresos_por_defecto()).parents
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\caja\AppData\Local")
+    assert ruta_impresos_por_defecto().endswith("impresos.json")
+    assert "FoodOpsAgente" in ruta_impresos_por_defecto()
 
 
 def test_config_falta_variable():
@@ -320,3 +344,61 @@ def test_agente_contra_backend_real(api, engine):
     s.expire_all()
     assert s.get(TrabajoImpresion, trabajo_id).estado == "ok"
     s.close()
+
+
+# ---------------------------------------------------------------------------
+# Idempotencia ante reinicio (registro local de impresos)
+# ---------------------------------------------------------------------------
+
+
+def test_trabajo_impreso_agente_reiniciado_no_reimprime(tmp_path):
+    """Imprime, se cae antes de reportar, reinicia (proceso nuevo, misma
+    ruta de registro), el backend le reentrega el trabajo: no se imprime de
+    nuevo y se reporta ok."""
+    archivo = tmp_path / "impresos.json"
+    cfg = _config(archivo_impresos=str(archivo))
+    trabajo = {"id": 42, "tipo": "abrir_cajon", "payload": {}}
+
+    imp1 = ImpresoraMock()
+    api1 = ApiMock([trabajo], falla_reporte=1)   # se cae antes de reportar
+    Agente(cfg, api1, imp1).ciclo()
+    assert len(imp1.enviados) == 1 and api1.reportes == []
+    assert json.loads(archivo.read_text())["impresos"] == [42]
+
+    # Reinicio: instancia nueva, nada en memoria.
+    imp2 = ImpresoraMock()
+    api2 = ApiMock([trabajo])                    # reentrega tras el timeout de 30s
+    Agente(cfg, api2, imp2).ciclo()
+    assert imp2.enviados == []
+    assert api2.reportes == [(42, "ok", None)]
+
+
+def test_trabajo_con_error_si_se_reintenta_tras_reinicio(tmp_path):
+    """Solo se registra lo impreso con éxito: un trabajo que falló y se
+    reintenta desde el sistema se vuelve a intentar imprimir."""
+    cfg = _config(archivo_impresos=str(tmp_path / "impresos.json"))
+    trabajo = {"id": 43, "tipo": "abrir_cajon", "payload": {}}
+    Agente(cfg, ApiMock([trabajo]), ImpresoraMock(falla_en={"todo"})).ciclo()
+
+    imp = ImpresoraMock()
+    api = ApiMock([trabajo])
+    Agente(cfg, api, imp).ciclo()
+    assert len(imp.enviados) == 1 and api.reportes == [(43, "ok", None)]
+
+
+def test_registro_corrupto_arranca_vacio(tmp_path):
+    archivo = tmp_path / "impresos.json"
+    archivo.write_text("{no es json")
+    r = RegistroImpresos(str(archivo))
+    assert not r.contiene(1)
+    r.agregar(1)
+    assert RegistroImpresos(str(archivo)).contiene(1)
+
+
+def test_registro_se_acota(tmp_path, monkeypatch):
+    monkeypatch.setattr(RegistroImpresos, "MAXIMO", 3)
+    r = RegistroImpresos(str(tmp_path / "impresos.json"))
+    for i in range(5):
+        r.agregar(i)
+    r2 = RegistroImpresos(str(tmp_path / "impresos.json"))
+    assert [r2.contiene(i) for i in range(5)] == [False, False, True, True, True]
