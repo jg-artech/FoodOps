@@ -147,13 +147,14 @@ def _insertar_orden(engine, punto_id, *, metodo_pago=MetodoPago.EFECTIVO,
 
 
 def _insertar_trabajo(engine, punto_id, solicitado_por, *, tipo="ticket", estado="pendiente",
-                      orden_id=None, tomado_at=None) -> int:
+                      orden_id=None, tomado_at=None, created_at=None) -> int:
     Session = sessionmaker(bind=engine)
     s = Session()
     t = TrabajoImpresion(
         punto_id=punto_id, tipo=tipo, payload={}, estado=estado,
         solicitado_por=solicitado_por, orden_id=orden_id, tomado_at=tomado_at,
         motivo="prueba manual" if tipo == "abrir_cajon" else None,
+        created_at=created_at or datetime.utcnow(),
     )
     s.add(t)
     s.commit()
@@ -702,3 +703,109 @@ def test_orden_admite_ticket_y_reimpresiones_pero_un_solo_abrir_cajon(api, ctx, 
     for _ in range(2):
         _insertar_trabajo(engine, ctx["tiendas"]["agente"], ctx["resp_agente"]["user_id"],
                           tipo="abrir_cajon", estado="ok")
+
+
+# ---------------------------------------------------------------------------
+# Caducidad del ABRIR_CAJON (120s)
+# ---------------------------------------------------------------------------
+
+
+class _ImpresoraMock:
+    def __init__(self):
+        self.enviados = []
+
+    def enviar(self, datos):
+        self.enviados.append(datos)
+
+
+def _agente_real(api, token, tmp_path):
+    """Lógica real del agente (tools/agente_impresion) hablando con el
+    backend por TestClient, con impresora mock."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+    from agente_impresion.agente import Agente, Config
+
+    h = _agente(token)
+
+    class ApiTestClient:
+        def pendientes(self):
+            r = api.get("/api/impresion/agente/pendientes", headers=h)
+            assert r.status_code == 200
+            return r.json()
+
+        def reportar(self, tid, estado, error=None):
+            body = {"estado": estado, **({"error": error} if error else {})}
+            assert api.post(f"/api/impresion/agente/trabajos/{tid}/resultado",
+                            json=body, headers=h).status_code == 200
+
+    impresora = _ImpresoraMock()
+    config = Config(api_url="http://test", token=token, impresora_ip="127.0.0.1",
+                    archivo_impresos=str(tmp_path / "impresos.json"))
+    return Agente(config, ApiTestClient(), impresora), impresora
+
+
+PULSO = bytes([0x1B, 0x70, 0x00, 0x19, 0xFA])
+
+
+def test_cajon_de_hace_5_minutos_caduca_y_no_envia_pulso(api, ctx, engine, S, token_agente,
+                                                          tmp_path):
+    _vaciar_cola(api, token_agente)
+    tid = _insertar_trabajo(engine, ctx["tiendas"]["agente"], ctx["resp_agente"]["user_id"],
+                            tipo="abrir_cajon",
+                            created_at=datetime.utcnow() - timedelta(minutes=5))
+    agente, impresora = _agente_real(api, token_agente, tmp_path)
+    agente.ciclo()
+
+    assert not any(PULSO in d for d in impresora.enviados)
+    t = S.get(TrabajoImpresion, tid)
+    assert t.estado == "error" and t.error == "caducado" and t.completado_at is not None
+    assert S.execute(select(AuditLog).where(
+        AuditLog.accion == "ABRIR_CAJON_CADUCADO", AuditLog.entidad_id == str(tid))
+    ).scalar_one()
+
+
+def test_cajon_reciente_si_se_ejecuta(api, ctx, engine, S, token_agente, tmp_path):
+    _vaciar_cola(api, token_agente)
+    tid = _insertar_trabajo(engine, ctx["tiendas"]["agente"], ctx["resp_agente"]["user_id"],
+                            tipo="abrir_cajon",
+                            created_at=datetime.utcnow() - timedelta(seconds=60))
+    agente, impresora = _agente_real(api, token_agente, tmp_path)
+    agente.ciclo()
+    assert impresora.enviados == [b"\x1b@" + PULSO]
+    assert S.get(TrabajoImpresion, tid).estado == "ok"
+
+
+def test_cajon_imprimiendo_vencido_y_caducado_no_se_reentrega(api, ctx, engine, S, token_agente):
+    """Agente caído a mitad: a los 30s se reentregaría, pero si ya pasaron
+    120s desde que se creó, caduca en vez de abrir el cajón tarde."""
+    _vaciar_cola(api, token_agente)
+    tid = _insertar_trabajo(engine, ctx["tiendas"]["agente"], ctx["resp_agente"]["user_id"],
+                            tipo="abrir_cajon", estado="imprimiendo",
+                            created_at=datetime.utcnow() - timedelta(seconds=150),
+                            tomado_at=datetime.utcnow() - timedelta(seconds=40))
+    ids = [t["id"] for t in api.get("/api/impresion/agente/pendientes",
+                                    headers=_agente(token_agente)).json()]
+    assert tid not in ids
+    t = S.get(TrabajoImpresion, tid)
+    assert t.estado == "error" and t.error == "caducado"
+
+
+def test_ticket_viejo_no_caduca(api, ctx, engine, S, token_agente):
+    _vaciar_cola(api, token_agente)
+    tid = _insertar_trabajo(engine, ctx["tiendas"]["agente"], ctx["resp_agente"]["user_id"],
+                            created_at=datetime.utcnow() - timedelta(hours=3))
+    ids = [t["id"] for t in api.get("/api/impresion/agente/pendientes",
+                                    headers=_agente(token_agente)).json()]
+    assert tid in ids
+    _vaciar_cola(api, token_agente)
+
+
+def test_reintentar_cajon_caducado_409(api, ctx, engine):
+    tid = _insertar_trabajo(engine, ctx["tiendas"]["matriz"],
+                            ctx["roles"]["resp_tienda"]["user_id"], tipo="abrir_cajon",
+                            estado="error", created_at=datetime.utcnow() - timedelta(minutes=5))
+    r = api.post(f"/api/impresion/trabajos/{tid}/reintentar",
+                 headers=_auth(ctx["roles"]["resp_tienda"]))
+    assert r.status_code == 409
