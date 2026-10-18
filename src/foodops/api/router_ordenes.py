@@ -30,7 +30,7 @@ from foodops.db.models import (
     Usuario,
 )
 from foodops.db.models_stock import ProductoComponente, ProductoMenu, TransaccionComponente
-from foodops.domain.schemas import CrearTransaccionRequest, OrdenCreate
+from foodops.domain.schemas import ConfirmarCobroRequest, CrearTransaccionRequest, OrdenCreate
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +52,22 @@ _ROLES_OPERACION = (
     "admin",
 )
 
+# Estado de cobro: eje independiente de OrdenEstado (que es de cocina - ver
+# docs/AUDITORIA_COBRO_EFECTIVO.md). String simple, no Enum nativo de
+# Postgres, igual que el resto de "estado" sueltos del proyecto.
+ESTADO_COBRO_PENDIENTE = "pendiente_recibir"
+ESTADO_COBRO_COBRADA = "cobrada"
 
-def _orden_dict(o, items, tomada_por_nombre=None, punto_nombre=None):
+# Puede confirmar la recepción de efectivo de una orden, y por eso también
+# puede cancelar una orden ya cobrada (ver actualizar_estado_orden) - el
+# vendedor no puede ninguna de las dos cosas. Mismo set de roles que
+# "ROLES_ABRIR_CAJON" en docs/DISENO_IMPRESION.md (ese documento es solo
+# diseño, no código: esta constante se define aquí sin depender de nada de
+# esa fase, que sigue sin implementarse).
+_ROLES_CONFIRMAR_COBRO = ("resp_tienda", "gerente_punto", "gerente_general", "admin")
+
+
+def _orden_dict(o, items, tomada_por_nombre=None, punto_nombre=None, confirmado_por_nombre=None):
     return {
         "id": o.id,
         "numero_orden": o.numero_orden,
@@ -72,6 +86,14 @@ def _orden_dict(o, items, tomada_por_nombre=None, punto_nombre=None):
         "tomada_por_nombre": tomada_por_nombre,
         "punto_id": o.punto_id,
         "punto_nombre": punto_nombre,
+        # Eje de cobro, independiente de "estado" (cocina) - ver
+        # docs/AUDITORIA_COBRO_EFECTIVO.md.
+        "estado_cobro": o.estado_cobro,
+        "monto_recibido": float(o.monto_recibido) if o.monto_recibido is not None else None,
+        "vuelto_entregado": float(o.vuelto_entregado) if o.vuelto_entregado is not None else None,
+        "confirmado_por": o.confirmado_por,
+        "confirmado_por_nombre": confirmado_por_nombre,
+        "confirmado_at": str(o.confirmado_at) if o.confirmado_at else None,
         "items": [
             {
                 "producto": i.producto,
@@ -115,6 +137,15 @@ def crear_orden(
             dinero_recibido=float(orden.dinero_recibido) if orden.dinero_recibido is not None else None,
             vuelto=float(orden.vuelto) if orden.vuelto is not None else None,
             estado=OrdenEstado.PENDIENTE,
+            # En efectivo, el cobro queda pendiente de que el responsable
+            # confirme lo que recibió de verdad (ver confirmar_cobro_efectivo
+            # más abajo). Tarjeta/transferencia se confirman al momento, no
+            # hay entrega física de efectivo que esperar.
+            estado_cobro=(
+                ESTADO_COBRO_PENDIENTE
+                if orden.metodo_pago == MetodoPago.EFECTIVO
+                else ESTADO_COBRO_COBRADA
+            ),
             tomada_por=current_user.user_id,
         )
         session.add(nueva_orden)
@@ -140,7 +171,11 @@ def crear_orden(
             entidad_id=nueva_orden.id,
             usuario_id=current_user.user_id,
             punto_id=current_user.punto_id,
-            detalle={"numero_orden": numero_orden, "total": total},
+            detalle={
+                "numero_orden": numero_orden,
+                "total": total,
+                "estado_cobro": nueva_orden.estado_cobro,
+            },
         )
         session.commit()
         punto = session.get(PuntoVenta, punto_id)
@@ -232,9 +267,27 @@ def actualizar_estado_orden(
             raise HTTPException(status_code=404, detail="Orden no encontrada")
         exigir_acceso_a_punto(current_user, orden.punto_id)
         nuevo_estado = data.get("estado")
-        orden.estado = OrdenEstado(nuevo_estado)
+        nuevo_estado_enum = OrdenEstado(nuevo_estado)
 
-        if OrdenEstado(nuevo_estado) == OrdenEstado.CANCELADO:
+        if nuevo_estado_enum == OrdenEstado.CANCELADO:
+            # Una vez el responsable confirmó el efectivo recibido, cancelar
+            # la orden deja de ser algo que el vendedor pueda hacer solo -
+            # es decisión de quien maneja caja. Solo aplica a efectivo: una
+            # orden con tarjeta/transferencia nace "cobrada" de inmediato
+            # (ver crear_orden) y seguía pudiéndose cancelar como siempre,
+            # sin este candado nuevo.
+            if (
+                orden.metodo_pago == MetodoPago.EFECTIVO
+                and orden.estado_cobro == ESTADO_COBRO_COBRADA
+                and current_user.rol not in _ROLES_CONFIRMAR_COBRO
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Esta orden ya fue cobrada; solo un responsable de "
+                        "tienda o gerencia puede anularla"
+                    ),
+                )
             registrar_auditoria(
                 session,
                 accion="ANULAR_ORDEN",
@@ -242,13 +295,81 @@ def actualizar_estado_orden(
                 entidad_id=orden_id,
                 usuario_id=current_user.user_id,
                 punto_id=orden.punto_id,
-                detalle={"numero_orden": orden.numero_orden},
+                detalle={"numero_orden": orden.numero_orden, "estado_cobro": orden.estado_cobro},
             )
+
+        orden.estado = nuevo_estado_enum
 
         session.commit()
         return {"id": orden.id, "numero_orden": orden.numero_orden, "estado": orden.estado.value}
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Estado inválido: {nuevo_estado}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+@router.post("/{orden_id}/confirmar-cobro")
+def confirmar_cobro_efectivo(
+    orden_id: int,
+    body: ConfirmarCobroRequest,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_CONFIRMAR_COBRO)),
+):
+    """El responsable confirma lo que recibió de verdad al entregar la
+    orden en efectivo. Antes de esto, el dinero no entra al cuadre de caja
+    (ver _calcular_efectivo_esperado en router_caja.py)."""
+    session = Session()
+    try:
+        orden = session.get(Orden, orden_id)
+        if not orden:
+            raise HTTPException(status_code=404, detail="Orden no encontrada")
+        exigir_acceso_a_punto(current_user, orden.punto_id)
+
+        if orden.metodo_pago != MetodoPago.EFECTIVO:
+            raise HTTPException(status_code=400, detail="Esta orden no es en efectivo")
+        if orden.estado == OrdenEstado.CANCELADO:
+            raise HTTPException(status_code=400, detail="No se puede confirmar el cobro de una orden cancelada")
+        if orden.estado_cobro == ESTADO_COBRO_COBRADA:
+            raise HTTPException(status_code=400, detail="Esta orden ya fue cobrada")
+
+        orden.monto_recibido = float(body.monto_recibido)
+        orden.vuelto_entregado = float(body.vuelto_entregado)
+        orden.confirmado_por = current_user.user_id
+        orden.confirmado_at = datetime.utcnow()
+        orden.estado_cobro = ESTADO_COBRO_COBRADA
+
+        registrar_auditoria(
+            session,
+            accion="CONFIRMAR_COBRO_EFECTIVO",
+            entidad="orden",
+            entidad_id=orden.id,
+            usuario_id=current_user.user_id,
+            punto_id=orden.punto_id,
+            detalle={
+                "numero_orden": orden.numero_orden,
+                "monto_recibido": float(body.monto_recibido),
+                "vuelto_entregado": float(body.vuelto_entregado),
+                "vuelto_esperado": float(orden.vuelto) if orden.vuelto is not None else None,
+            },
+        )
+        session.commit()
+
+        items = session.execute(select(OrdenItem).where(OrdenItem.orden_id == orden.id)).scalars().all()
+        punto = session.get(PuntoVenta, orden.punto_id)
+        confirmador = session.get(Usuario, current_user.user_id)
+        nombre_confirmador = (
+            (confirmador.nombre_completo or confirmador.username) if confirmador else None
+        )
+        return _orden_dict(
+            orden,
+            items,
+            punto_nombre=punto.nombre if punto else None,
+            confirmado_por_nombre=nombre_confirmador,
+        )
     except HTTPException:
         raise
     except Exception as e:
