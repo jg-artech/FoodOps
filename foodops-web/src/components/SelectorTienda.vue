@@ -25,7 +25,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import api from '@/services/api'
 import { useAuthStore } from '@/store/index'
 
@@ -41,7 +41,7 @@ function cambiar(valor) {
   window.location.reload()
 }
 
-onMounted(async () => {
+async function cargarTiendas() {
   if (!auth.veTodasLasTiendas) return
   try {
     const { data } = await api.get('/api/puntos-venta')
@@ -49,5 +49,18 @@ onMounted(async () => {
   } catch {
     tiendas.value = []
   }
+}
+
+onMounted(cargarTiendas)
+
+// Justo después de iniciar sesión, App.vue monta NavBar (y este selector)
+// en cuanto se guarda el token - auth.login() todavía no terminó de
+// esperar fetchMe(), así que auth.user sigue null y veTodasLasTiendas da
+// false en ese primer onMounted. Sin este watch, el <select> se quedaba
+// para siempre con solo la opción "Todas las tiendas" (nada más que
+// elegir) hasta que un refresh de página volvía a montar todo con el
+// usuario ya cargado desde localStorage. Bug reportado 2026-10-18.
+watch(() => auth.veTodasLasTiendas, (ahora) => {
+  if (ahora) cargarTiendas()
 })
 </script>
