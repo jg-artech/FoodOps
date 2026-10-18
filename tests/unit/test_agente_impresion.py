@@ -584,3 +584,64 @@ def test_proceso_real_con_token_invalido_no_lo_escribe(tmp_path):
     contenido = destino.read_text(encoding="utf-8")
     assert "FOODOPS_AGENTE_TOKEN tiene espacios o caracteres no válidos" in contenido
     assert TOKEN_PRUEBA not in contenido + r.stdout + r.stderr
+
+
+# ---------------------------------------------------------------------------
+# Página de prueba de code page (prueba_impresora.py)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("nombre,n,euro,enie", [
+    ("CP850", 2, b"?", b"\xa4"),
+    ("CP858", 19, b"\xd5", b"\xa4"),
+    ("WPC1252", 16, b"\x80", b"\xf1"),
+    ("CP437", 0, b"?", b"\xa4"),
+])
+def test_bloque_de_cada_code_page(nombre, n, euro, enie):
+    from agente_impresion import prueba_impresora as pi
+
+    (cand,) = [c for c in pi.CANDIDATAS if c[0] == nombre]
+    datos = pi.bloque(*cand)
+    assert datos.startswith(b"\x1bt" + bytes([n]))
+    assert f"=== {nombre} (ESC t {n}) ===".encode() in datos
+    assert b"Le" + enie + b"a" in datos
+    assert datos.rstrip(b"\n").endswith(euro)  # '€' es el último carácter
+
+
+def test_pagina_de_prueba_completa_sin_pulso_y_con_corte():
+    from agente_impresion import prueba_impresora as pi
+
+    datos = pi.pagina_de_prueba()
+    assert datos.startswith(b"\x1b@")
+    assert datos.endswith(b"\x1dV\x42\x00")
+    assert b"\x1bp" not in datos  # nunca abre el cajón
+    assert all(f"=== {c[0]} ".encode() in datos for c in pi.CANDIDATAS)
+
+
+def test_prueba_impresora_envia_por_socket_a_mock(capsys):
+    from agente_impresion import prueba_impresora as pi
+
+    srv = socket.create_server(("127.0.0.1", 0))
+    puerto = srv.getsockname()[1]
+    recibido = bytearray()
+
+    def atender():
+        conn, _ = srv.accept()
+        with conn:
+            while chunk := conn.recv(4096):
+                recibido.extend(chunk)
+
+    hilo = threading.Thread(target=atender, daemon=True)
+    hilo.start()
+    assert pi.main(["--ip", "127.0.0.1", "--puerto", str(puerto)]) == 0
+    hilo.join(timeout=2)
+    srv.close()
+    assert bytes(recibido) == pi.pagina_de_prueba()
+
+
+def test_prueba_impresora_sin_ip(monkeypatch, capsys):
+    from agente_impresion import prueba_impresora as pi
+
+    monkeypatch.delenv("FOODOPS_IMPRESORA_IP", raising=False)
+    assert pi.main([]) == 2
+    assert "Falta la IP" in capsys.readouterr().err
