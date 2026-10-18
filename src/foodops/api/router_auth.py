@@ -14,6 +14,7 @@ from foodops.core.auth import (
     TokenData,
     create_access_token,
     get_current_user,
+    hash_password,
     oauth2_scheme,
     requiere_rol,
     resolver_punto_id,
@@ -22,8 +23,8 @@ from foodops.core.auth import (
     verify_token,
 )
 from foodops.core.config import settings
-from foodops.db.models import PuntoVenta, Usuario
-from foodops.domain.schemas import LoginRequest, TokenResponse
+from foodops.db.models import PuntoVenta, Usuario, UserRol
+from foodops.domain.schemas import LoginRequest, TokenResponse, UsuarioCreate, UsuarioUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,23 @@ Session = sessionmaker(bind=engine)
 
 _MAX_INTENTOS = 5
 _BLOQUEO_MINUTOS = 15
+
+# Crear/editar usuarios es más sensible que solo listarlos (GET /usuarios
+# además deja entrar a resp_tienda, para que pueda ver sus repartidores).
+_ROLES_GESTION_USUARIOS = ("admin", "gerente_general")
+
+
+def _usuario_dict(u: Usuario, punto_nombre: Optional[str] = None) -> dict:
+    return {
+        "id": u.id,
+        "username": u.username,
+        "email": u.email,
+        "nombre_completo": u.nombre_completo,
+        "rol": u.rol.value,
+        "punto_id": u.punto_id,
+        "punto_nombre": punto_nombre,
+        "activo": u.activo,
+    }
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -165,28 +183,164 @@ def get_me(current_user: TokenData = Depends(get_current_user)):
 def listar_usuarios(
     rol: Optional[str] = Query(default=None),
     punto_id: Optional[int] = Query(default=None),
+    activo: Optional[bool] = Query(default=None),
     current_user: TokenData = Depends(requiere_rol("resp_tienda", "gerente_general", "admin")),
 ):
-    """Usuarios activos de la tienda del usuario autenticado (ej. repartidores).
-    Gerencia puede pedir otra tienda con ?punto_id= u omitirlo para ver todas."""
+    """Usuarios de la tienda del usuario autenticado.
+    Gerencia puede pedir otra tienda con ?punto_id= u omitirlo para ver todas.
+    Por defecto resp_tienda ve solo activos (uso operativo: elegir un
+    repartidor); admin/gerente_general ven todos salvo que pasen ?activo=,
+    porque la pantalla de gestión de usuarios también necesita ver a quién
+    desactivó para poder reactivarlo."""
     session = Session()
     try:
         effective_punto_id = resolver_punto_id(session, current_user, punto_id, permitir_todas=True)
-        stmt = select(Usuario).where(Usuario.activo.is_(True))
+        stmt = select(Usuario)
+        if activo is not None:
+            stmt = stmt.where(Usuario.activo.is_(activo))
+        elif current_user.rol == "resp_tienda":
+            stmt = stmt.where(Usuario.activo.is_(True))
         if effective_punto_id is not None:
             stmt = stmt.where(Usuario.punto_id == effective_punto_id)
         if rol:
             stmt = stmt.where(Usuario.rol == rol)
-        usuarios = session.execute(stmt).scalars().all()
-        return [
-            {
-                "id": u.id,
-                "username": u.username,
-                "nombre_completo": u.nombre_completo,
-                "rol": u.rol.value,
-                "punto_id": u.punto_id,
-            }
-            for u in usuarios
-        ]
+        usuarios = session.execute(stmt.order_by(Usuario.id)).scalars().all()
+        nombres_punto = {p.id: p.nombre for p in session.execute(select(PuntoVenta)).scalars()}
+        return [_usuario_dict(u, nombres_punto.get(u.punto_id)) for u in usuarios]
+    finally:
+        session.close()
+
+
+def _validar_rol_y_punto(session, rol_valor: str, punto_id: Optional[int]) -> UserRol:
+    """Reglas compartidas por crear y actualizar usuario: rol válido, y
+    punto_id presente+existente salvo que el rol sea de los que ven todas
+    las tiendas (ver ROLES_MULTI_TIENDA en core.auth)."""
+    rol_valores = {r.value: r for r in UserRol}
+    if rol_valor not in rol_valores:
+        raise HTTPException(status_code=400, detail=f"Rol inválido: '{rol_valor}'. Válidos: {', '.join(rol_valores)}")
+    rol = rol_valores[rol_valor]
+
+    if punto_id is not None:
+        if session.get(PuntoVenta, punto_id) is None:
+            raise HTTPException(status_code=404, detail="Punto de venta no encontrado")
+    elif rol_valor not in ROLES_MULTI_TIENDA:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El rol '{rol_valor}' necesita una tienda asignada (no está entre los roles multitienda)",
+        )
+    return rol
+
+
+@router.post("/usuarios", status_code=status.HTTP_201_CREATED)
+def crear_usuario(
+    body: UsuarioCreate,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_GESTION_USUARIOS)),
+):
+    """Crea un usuario. Hasta ahora la única vía era scripts/crear_usuario.py
+    a mano en el servidor; esto es lo mismo expuesto para el panel."""
+    session = Session()
+    try:
+        rol = _validar_rol_y_punto(session, body.rol, body.punto_id)
+
+        if session.execute(select(Usuario).where(Usuario.username == body.username)).scalars().first():
+            raise HTTPException(status_code=400, detail=f"Ya existe un usuario con username '{body.username}'")
+        if session.execute(select(Usuario).where(Usuario.email == body.email)).scalars().first():
+            raise HTTPException(status_code=400, detail=f"Ya existe un usuario con email '{body.email}'")
+
+        # empresa_id del usuario que crea, no del token: así un token emitido
+        # antes del campo empresa_id (que queda None) no rompe esto.
+        creador = session.get(Usuario, current_user.user_id)
+
+        nuevo = Usuario(
+            empresa_id=creador.empresa_id,
+            punto_id=body.punto_id,
+            username=body.username,
+            email=body.email,
+            password_hash=hash_password(body.password),
+            nombre_completo=body.nombre_completo or body.username,
+            rol=rol,
+            activo=True,
+        )
+        session.add(nuevo)
+        session.flush()
+
+        punto = session.get(PuntoVenta, nuevo.punto_id) if nuevo.punto_id else None
+        registrar_auditoria(
+            session,
+            accion="CREAR_USUARIO",
+            entidad="usuario",
+            entidad_id=nuevo.id,
+            usuario_id=current_user.user_id,
+            punto_id=nuevo.punto_id,
+            detalle={"username": nuevo.username, "rol": rol.value},
+        )
+        session.commit()
+        return _usuario_dict(nuevo, punto.nombre if punto else None)
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+@router.patch("/usuarios/{usuario_id}")
+def actualizar_usuario(
+    usuario_id: int,
+    body: UsuarioUpdate,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_GESTION_USUARIOS)),
+):
+    """Edita rol/tienda/estado/nombre, y opcionalmente resetea la contraseña
+    (no hay pantalla de "cambiar mi contraseña" todavía, así que esta es la
+    única vía si alguien se queda fuera)."""
+    session = Session()
+    try:
+        usuario = session.get(Usuario, usuario_id)
+        if not usuario:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        updates = body.model_dump(exclude_unset=True, exclude={"password"})
+
+        if usuario_id == current_user.user_id and updates.get("activo") is False:
+            raise HTTPException(status_code=400, detail="No puede desactivar su propio usuario")
+
+        # rol y punto_id se validan juntos: si solo viene uno de los dos, se
+        # completa con el valor actual para no dejar una combinación rota
+        # (ej. cambiar el rol a uno de tienda sin tocar punto_id, cuando el
+        # usuario no tenía tienda porque antes era gerente_general).
+        rol_valor = updates.get("rol", usuario.rol.value)
+        punto_id = updates["punto_id"] if "punto_id" in updates else usuario.punto_id
+        if "rol" in updates or "punto_id" in updates:
+            rol = _validar_rol_y_punto(session, rol_valor, punto_id)
+            usuario.rol = rol
+            usuario.punto_id = punto_id
+
+        if "nombre_completo" in updates:
+            usuario.nombre_completo = updates["nombre_completo"]
+        if "activo" in updates:
+            usuario.activo = updates["activo"]
+        if body.password:
+            usuario.password_hash = hash_password(body.password)
+
+        punto = session.get(PuntoVenta, usuario.punto_id) if usuario.punto_id else None
+        registrar_auditoria(
+            session,
+            accion="ACTUALIZAR_USUARIO",
+            entidad="usuario",
+            entidad_id=usuario.id,
+            usuario_id=current_user.user_id,
+            punto_id=usuario.punto_id,
+            detalle={k: v for k, v in updates.items()} | ({"password_cambiada": True} if body.password else {}),
+        )
+        session.commit()
+        return _usuario_dict(usuario, punto.nombre if punto else None)
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
     finally:
         session.close()
