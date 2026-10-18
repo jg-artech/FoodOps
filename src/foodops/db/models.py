@@ -255,12 +255,14 @@ class TrabajoImpresion(Base):
         ),
         Index("ix_trabajos_impresion_punto_estado", "punto_id", "estado"),
         Index("ix_trabajos_impresion_orden", "orden_id"),
-        # A lo sumo un ABRIR_CAJON por orden, también a nivel de BD.
+        # Parcial: a lo sumo un ABRIR_CAJON por orden, pero TICKET sin límite
+        # (reimpresiones). Los ABRIR_CAJON manuales tienen orden_id NULL y en
+        # Postgres los NULL no chocan en un índice único.
         Index(
             "ux_trabajos_impresion_cajon_por_orden",
             "orden_id",
             unique=True,
-            postgresql_where=text("tipo = 'abrir_cajon' AND orden_id IS NOT NULL"),
+            postgresql_where=text("tipo = 'abrir_cajon'"),
         ),
     )
 

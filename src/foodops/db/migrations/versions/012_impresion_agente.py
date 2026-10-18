@@ -70,7 +70,7 @@ def upgrade() -> None:
         "trabajos_impresion",
         ["orden_id"],
         unique=True,
-        postgresql_where=sa.text("tipo = 'abrir_cajon' AND orden_id IS NOT NULL"),
+        postgresql_where=sa.text("tipo = 'abrir_cajon'"),
     )
 
     op.create_table(

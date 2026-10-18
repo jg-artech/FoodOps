@@ -661,3 +661,44 @@ def test_reintentar_trabajo_de_otra_tienda_403(api, ctx, engine):
     r = api.post(f"/api/impresion/trabajos/{tid}/reintentar",
                  headers=_auth(ctx["roles"]["resp_tienda"]))
     assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Índice único parcial: un ABRIR_CAJON por orden, TICKET sin límite
+# ---------------------------------------------------------------------------
+
+
+def test_indice_cajon_es_parcial(engine):
+    from sqlalchemy import text
+
+    with engine.connect() as c:
+        indexdef = c.execute(text(
+            "SELECT indexdef FROM pg_indexes "
+            "WHERE indexname = 'ux_trabajos_impresion_cajon_por_orden'"
+        )).scalar_one()
+    assert "UNIQUE" in indexdef
+    assert "WHERE" in indexdef and "'abrir_cajon'" in indexdef
+
+
+def test_orden_admite_ticket_y_reimpresiones_pero_un_solo_abrir_cajon(api, ctx, engine, S):
+    from sqlalchemy.exc import IntegrityError
+
+    orden_id = _insertar_orden(engine, ctx["tiendas"]["agente"])
+    assert _confirmar(api, ctx["resp_agente"], orden_id).status_code == 200
+    for _ in range(4):  # ticket + 3 reimpresiones
+        r = api.post("/api/impresion/ticket", json={"orden_id": orden_id},
+                     headers=_auth(ctx["resp_agente"]))
+        assert r.status_code == 201
+    tipos = [t.tipo for t in S.execute(
+        select(TrabajoImpresion).where(TrabajoImpresion.orden_id == orden_id)).scalars()]
+    assert tipos.count("ticket") == 4 and tipos.count("abrir_cajon") == 1
+
+    # Un segundo ABRIR_CAJON para la misma orden lo rechaza la propia BD.
+    with pytest.raises(IntegrityError):
+        _insertar_trabajo(engine, ctx["tiendas"]["agente"], ctx["resp_agente"]["user_id"],
+                          tipo="abrir_cajon", orden_id=orden_id)
+
+    # Los ABRIR_CAJON manuales (orden_id NULL) no chocan entre sí.
+    for _ in range(2):
+        _insertar_trabajo(engine, ctx["tiendas"]["agente"], ctx["resp_agente"]["user_id"],
+                          tipo="abrir_cajon", estado="ok")
