@@ -39,7 +39,13 @@
         <RouterLink to="/caja/inventario/cierre" class="underline font-semibold">Completar inventario →</RouterLink>
       </div>
 
-      <button @click="paso = 2" :disabled="!inventarioCierreCompleto"
+      <div v-if="cobrosPendientes > 0" class="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800">
+        <p class="font-bold mb-1">⚠️ {{ cobrosPendientes }} orden(es) en efectivo sin confirmar el cobro</p>
+        <p class="text-xs mb-1">No se puede cerrar caja hasta confirmar cuánto se recibió de verdad en cada una.</p>
+        <RouterLink to="/caja/cobros-pendientes" class="underline font-semibold">Confirmar cobros →</RouterLink>
+      </div>
+
+      <button @click="paso = 2" :disabled="!inventarioCierreCompleto || cobrosPendientes > 0"
         class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-4 rounded-xl text-lg transition disabled:opacity-40">
         Continuar al conteo →
       </button>
@@ -100,6 +106,7 @@ const confirmar = ref(false)
 const errorMsg = ref('')
 const paso = ref(1)
 const efectivoContado = ref('')
+const cobrosPendientes = ref(0)
 
 async function cargar() {
   loading.value = true
@@ -110,6 +117,12 @@ async function cargar() {
     if (data.estado === 'abierta') {
       const { data: inv } = await api.get('/api/inventario/diario/cierre')
       inventarioCierreCompleto.value = !!inv.completado
+      // Mismo bloqueo que ya aplica el backend en POST /api/caja/cerrar -
+      // se muestra antes de que lo descubran al intentar cerrar.
+      const { data: pendientes } = await api.get('/api/ordenes/', {
+        params: { estado_cobro: 'pendiente_recibir' },
+      })
+      cobrosPendientes.value = pendientes.length
     }
   } finally {
     loading.value = false

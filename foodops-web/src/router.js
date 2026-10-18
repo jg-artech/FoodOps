@@ -21,6 +21,7 @@ import InventarioDiarioView from '@/views/InventarioDiarioView.vue'
 import ReglasReabastecimientoView from '@/views/ReglasReabastecimientoView.vue'
 import PuntosVentaView from '@/views/PuntosVentaView.vue'
 import UsuariosView from '@/views/UsuariosView.vue'
+import CobrosPendientesView from '@/views/CobrosPendientesView.vue'
 
 
 // Roles que el backend ya exige para los endpoints de cada sección. Tenerlos
@@ -29,6 +30,10 @@ import UsuariosView from '@/views/UsuariosView.vue'
 const ROLES_CAJA = ['resp_tienda', 'gerente_general', 'admin']
 const ROLES_GERENCIA = ['gerente_general', 'admin']
 const ROLES_CENTRAL = ['gerente_central', 'gerente_general', 'admin']
+// Mismo set que _ROLES_CONFIRMAR_COBRO en router_ordenes.py: a diferencia
+// de ROLES_CAJA (caja financiera/gastos/fondos), gerente_punto SÍ puede
+// confirmar cobros - ver docs/AUDITORIA_COBRO_EFECTIVO.md.
+const ROLES_CONFIRMAR_COBRO = ['resp_tienda', 'gerente_punto', 'gerente_general', 'admin']
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -47,6 +52,7 @@ const routes = [
   { path: '/caja/desperdicios', component: DesperdiciosView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
   { path: '/caja/fondos-repartidor', component: FondosRepartidorView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
   { path: '/caja/cierre', component: CierreCajaView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
+  { path: '/caja/cobros-pendientes', component: CobrosPendientesView, meta: { requiresAuth: true, roles: ROLES_CONFIRMAR_COBRO } },
   { path: '/caja/stock', component: StockView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
   { path: '/caja/pedidos-reabastecimiento', component: PedidosReabastecimientoView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
   { path: '/central', redirect: '/central/abastecimiento' },

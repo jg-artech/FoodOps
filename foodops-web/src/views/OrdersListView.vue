@@ -44,7 +44,7 @@
             class="text-xs bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded font-medium">
             Entregado
           </button>
-          <button v-if="['pendiente','preparando'].includes(orden.estado)"
+          <button v-if="['pendiente','preparando'].includes(orden.estado) && puedeCancelar(orden)"
             @click="cambiarEstado(orden, 'cancelado')"
             class="text-xs bg-red-100 hover:bg-red-200 text-red-600 px-2 py-1 rounded font-medium">
             ✕
@@ -91,6 +91,16 @@ const ordenesFiltradas = computed(() => {
 function conteo(estado) {
   if (estado === 'todas') return ordenes.value.length
   return ordenes.value.filter(o => o.estado === estado).length
+}
+
+// Una orden en efectivo ya cobrada solo la puede cancelar quien confirma
+// cobros (mismo set que ROLES_CONFIRMAR_COBRO del backend) - para el resto,
+// ocultar el botón en vez de dejar que lo intente y reciba un 403 (ver
+// actualizar_estado_orden en router_ordenes.py).
+const ROLES_CONFIRMAR_COBRO = ['resp_tienda', 'gerente_punto', 'gerente_general', 'admin']
+function puedeCancelar(orden) {
+  if (orden.metodo_pago !== 'efectivo' || orden.estado_cobro !== 'cobrada') return true
+  return ROLES_CONFIRMAR_COBRO.includes(auth.user?.rol)
 }
 
 async function fetchOrdenes() {

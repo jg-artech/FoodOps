@@ -6,9 +6,15 @@
         <p class="font-bold text-gray-800">{{ orden.numero_orden }}</p>
         <p class="text-xs text-gray-400">{{ horaFormato }}</p>
       </div>
-      <span class="text-xs font-bold px-2 py-1 rounded-full" :class="estadoClase">
-        {{ orden.estado.toUpperCase() }}
-      </span>
+      <div class="flex flex-col items-end gap-1">
+        <span class="text-xs font-bold px-2 py-1 rounded-full" :class="estadoClase">
+          {{ orden.estado.toUpperCase() }}
+        </span>
+        <span v-if="orden.estado_cobro === 'pendiente_recibir'"
+          class="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+          💵 cobro pendiente
+        </span>
+      </div>
     </div>
 
     <!-- Cliente -->
