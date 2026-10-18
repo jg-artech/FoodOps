@@ -238,6 +238,9 @@
           <span class="text-green-600 text-xl">Q{{ Number(ordenCreada.vuelto || 0).toFixed(2) }}</span>
         </div>
       </div>
+      <p v-if="ordenCreada?.metodo_pago === 'efectivo'" class="text-xs text-amber-600 mb-5 -mt-3">
+        💵 Entrega el efectivo al responsable - el cobro queda pendiente hasta que confirme cuánto recibió.
+      </p>
 
       <p v-else class="text-gray-500 mb-5">Total: <strong>Q{{ totalPrecio.toFixed(2) }}</strong></p>
 
