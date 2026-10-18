@@ -13,6 +13,8 @@ from foodops.api.router_auth import router as auth_router
 from foodops.api.router_caja import router as caja_router
 from foodops.api.router_config import router as config_router
 from foodops.api.router_gerencia import router as gerencia_router
+from foodops.api.router_impresion import router as impresion_router
+from foodops.api.router_impresion import router_puntos as impresion_puntos_router
 from foodops.api.router_ordenes import router as ordenes_router
 from foodops.api.router_stock import router as stock_router
 
@@ -45,6 +47,8 @@ app.include_router(stock_router)
 app.include_router(gerencia_router)
 app.include_router(config_router)
 app.include_router(abastecimiento_router)
+app.include_router(impresion_router)
+app.include_router(impresion_puntos_router)
 
 
 @app.exception_handler(Exception)
