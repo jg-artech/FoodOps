@@ -3,7 +3,7 @@
 // (NewOrderView) como para reimprimir una orden ya existente (OrdenList).
 // Recibe el objeto "orden" tal como lo devuelve GET/POST /api/ordenes/
 // (numero_orden, total, cliente_*, metodo_pago, dinero_recibido, vuelto,
-// created_at, tomada_por_nombre, notas_especiales, items[]).
+// created_at, tomada_por_nombre, punto_nombre, notas_especiales, items[]).
 
 const METODOS_LABEL = {
   efectivo: 'Efectivo',
@@ -80,6 +80,7 @@ function buildTicketHtml(orden) {
 </head>
 <body onload="window.print()">
   <div class="center bold big">${escapeHtml(nombreNegocio)}</div>
+  ${orden?.punto_nombre ? `<div class="center bold">${escapeHtml(orden.punto_nombre)}</div>` : ''}
   <div class="center muted">${escapeHtml(nombrePlataforma)}</div>
   <div class="center muted">${formatFechaTicket(orden?.created_at)}</div>
   <hr>
