@@ -92,6 +92,12 @@ ERROR_CADUCADO = "caducado"
 
 MOTIVO_MIN_CARACTERES = 5
 
+# Códigos de los 409 de POST /ticket. El frontend decide por el código, nunca
+# por el texto: IMPRIMIR_INACTIVA -> window.print() de siempre;
+# PENDIENTE_RECIBIR -> esperar a confirmar-cobro, sin fallback.
+COD_IMPRIMIR_INACTIVA = "IMPRIMIR_INACTIVA"
+COD_PENDIENTE_RECIBIR = "PENDIENTE_RECIBIR"
+
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -319,8 +325,12 @@ def crear_trabajo_ticket(
     """Encola un TICKET. NUNCA crea ABRIR_CAJON: imprimir o reimprimir no
     abre el cajón bajo ninguna circunstancia (§7).
 
-    409 si la orden es en efectivo y sigue pendiente_recibir: el ticket de
-    efectivo se imprime después de confirmar-cobro (§7, §12)."""
+    Dos 409, en este orden y con detail = {"codigo", "mensaje"}:
+    1. IMPRIMIR_INACTIVA: la tienda no tiene impresora por agente. Va primero
+       para que una tienda sin agente siga imprimiendo con window.print()
+       como siempre, también las órdenes en efectivo aún sin confirmar.
+    2. PENDIENTE_RECIBIR: orden en efectivo pendiente_recibir; con agente,
+       el ticket de efectivo se imprime después de confirmar-cobro (§7, §12)."""
     session = Session()
     try:
         orden = session.get(Orden, body.orden_id)
@@ -328,20 +338,28 @@ def crear_trabajo_ticket(
             raise HTTPException(status_code=404, detail="Orden no encontrada")
         exigir_acceso_a_punto(current_user, orden.punto_id)
 
+        punto = _get_punto_activo(session, orden.punto_id)
+        if not punto.impresora_activa:
+            # El frontend cae al window.print() de siempre.
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "codigo": COD_IMPRIMIR_INACTIVA,
+                    "mensaje": "Esta tienda no tiene impresora por agente activa",
+                },
+            )
+
         if (
             orden.metodo_pago == MetodoPago.EFECTIVO
             and orden.estado_cobro == ESTADO_COBRO_PENDIENTE
         ):
             raise HTTPException(
                 status_code=409,
-                detail="Orden en efectivo pendiente de recibir: confirme el cobro antes de imprimir",
-            )
-
-        punto = _get_punto_activo(session, orden.punto_id)
-        if not punto.impresora_activa:
-            # El frontend cae al window.print() de siempre.
-            raise HTTPException(
-                status_code=409, detail="Esta tienda no tiene impresora por agente activa"
+                detail={
+                    "codigo": COD_PENDIENTE_RECIBIR,
+                    "mensaje": "Orden en efectivo pendiente de recibir: "
+                               "confirme el cobro antes de imprimir",
+                },
             )
 
         trabajo = TrabajoImpresion(
