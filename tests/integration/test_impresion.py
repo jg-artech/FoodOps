@@ -809,3 +809,33 @@ def test_reintentar_cajon_caducado_409(api, ctx, engine):
     r = api.post(f"/api/impresion/trabajos/{tid}/reintentar",
                  headers=_auth(ctx["roles"]["resp_tienda"]))
     assert r.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Ticket de efectivo pendiente de recibir
+# ---------------------------------------------------------------------------
+
+
+def test_ticket_efectivo_pendiente_409_y_tras_confirmar_se_imprime(api, ctx, engine, S):
+    orden_id = _insertar_orden(engine, ctx["tiendas"]["agente"])  # efectivo, pendiente_recibir
+    r = api.post("/api/impresion/ticket", json={"orden_id": orden_id},
+                 headers=_auth(ctx["tomador_agente"]))
+    assert r.status_code == 409, r.text
+    assert not S.execute(select(TrabajoImpresion).where(
+        TrabajoImpresion.orden_id == orden_id)).first()
+
+    assert _confirmar(api, ctx["resp_agente"], orden_id).status_code == 200
+    r = api.post("/api/impresion/ticket", json={"orden_id": orden_id},
+                 headers=_auth(ctx["tomador_agente"]))
+    assert r.status_code == 201, r.text
+    assert r.json()["tipo"] == "ticket"
+
+
+@pytest.mark.parametrize("metodo", [MetodoPago.TARJETA, MetodoPago.TRANSFERENCIA])
+def test_ticket_tarjeta_y_transferencia_al_cobrar(api, ctx, engine, metodo):
+    """Nacen cobrada: el ticket se imprime de inmediato, sin confirmar."""
+    orden_id = _insertar_orden(engine, ctx["tiendas"]["agente"], metodo_pago=metodo,
+                               estado_cobro="cobrada")
+    r = api.post("/api/impresion/ticket", json={"orden_id": orden_id},
+                 headers=_auth(ctx["tomador_agente"]))
+    assert r.status_code == 201

@@ -18,7 +18,7 @@ from sqlalchemy import create_engine, or_, and_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from foodops.api.router_ordenes import _orden_dict
+from foodops.api.router_ordenes import ESTADO_COBRO_PENDIENTE, _orden_dict
 from foodops.core.audit import registrar_auditoria
 from foodops.core.auth import (
     TokenData,
@@ -30,6 +30,7 @@ from foodops.core.auth import (
 from foodops.core.auth_agente import AgenteData, hash_token_agente, requiere_agente
 from foodops.core.config import settings
 from foodops.db.models import (
+    MetodoPago,
     TRABAJO_ESTADO_ERROR,
     TRABAJO_ESTADO_IMPRIMIENDO,
     TRABAJO_ESTADO_OK,
@@ -316,13 +317,25 @@ def crear_trabajo_ticket(
     current_user: TokenData = Depends(requiere_rol(*ROLES_IMPRESION_TICKET)),
 ):
     """Encola un TICKET. NUNCA crea ABRIR_CAJON: imprimir o reimprimir no
-    abre el cajón bajo ninguna circunstancia (§7)."""
+    abre el cajón bajo ninguna circunstancia (§7).
+
+    409 si la orden es en efectivo y sigue pendiente_recibir: el ticket de
+    efectivo se imprime después de confirmar-cobro (§7, §12)."""
     session = Session()
     try:
         orden = session.get(Orden, body.orden_id)
         if orden is None:
             raise HTTPException(status_code=404, detail="Orden no encontrada")
         exigir_acceso_a_punto(current_user, orden.punto_id)
+
+        if (
+            orden.metodo_pago == MetodoPago.EFECTIVO
+            and orden.estado_cobro == ESTADO_COBRO_PENDIENTE
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Orden en efectivo pendiente de recibir: confirme el cobro antes de imprimir",
+            )
 
         punto = _get_punto_activo(session, orden.punto_id)
         if not punto.impresora_activa:
