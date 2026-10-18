@@ -245,9 +245,10 @@
       <p v-else class="text-gray-500 mb-5">Total: <strong>Q{{ totalPrecio.toFixed(2) }}</strong></p>
 
       <div class="flex flex-col gap-3">
-        <button @click="imprimirTicket" class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-4 rounded-xl text-lg flex items-center justify-center gap-2">
+        <button @click="imprimirTicket" :disabled="impresion.enviando" class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-4 rounded-xl text-lg flex items-center justify-center gap-2 disabled:opacity-60">
           🖨️ Imprimir ticket
         </button>
+        <EstadoImpresionTicket :impresion="impresion" class="text-center" />
         <button @click="resetOrden" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-4 rounded-xl text-lg">
           🍗 Nueva Orden
         </button>
@@ -290,7 +291,8 @@ import { getMenu, getCategorias } from '@/data/menu.js'
 import PiezaModal from '@/components/PiezaModal.vue'
 import SelectorComponentesModal from '@/components/SelectorComponentesModal.vue'
 import api from '@/services/api'
-import { imprimirTicket as imprimirTicketOrden } from '@/utils/ticket.js'
+import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
+import { useImpresionTicket } from '@/utils/impresionTicket.js'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -656,13 +658,13 @@ async function confirmarOrden() {
   }
 }
 
-// Impresión de ticket (impresora térmica angosta, máx. 7cm de ancho) — lógica
-// compartida con OrdenList.vue (reimprimir) en src/utils/ticket.js. ordenCreada
-// ya viene con la forma completa que devuelve el backend (items, cliente,
-// método de pago, tomada_por_nombre, notas_especiales...), así que no hace
-// falta reconstruir nada a partir de cart/form.
+// Impresión de ticket: por el agente de la tienda si está activo, si no con
+// window.print() de siempre (ver src/utils/impresionTicket.js). ordenCreada
+// ya viene con la forma completa que devuelve el backend, que es lo que
+// necesita ticket.js para el fallback.
+const impresion = reactive(useImpresionTicket())
 function imprimirTicket() {
-  imprimirTicketOrden(ordenCreada.value)
+  impresion.imprimir(ordenCreada.value)
 }
 
 function resetOrden() {
@@ -671,6 +673,7 @@ function resetOrden() {
   Object.assign(form, { tipo: '', cliente_nombre: '', cliente_telefono: '', cliente_direccion: '', metodo_pago: '', notas_especiales: '', dinero_recibido: '' })
   ordenCreada.value = null
   errorMsg.value = ''
+  impresion.limpiar()
 }
 </script>
 

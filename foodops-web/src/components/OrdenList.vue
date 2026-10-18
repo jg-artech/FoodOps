@@ -6,40 +6,58 @@
       <div
         v-for="orden in ordenes"
         :key="orden.id"
-        class="bg-white rounded-lg border border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm"
+        class="bg-white rounded-lg border border-gray-200 px-4 py-3 shadow-sm"
       >
-        <div>
-          <p class="font-semibold text-gray-800">{{ orden.numero_orden }}</p>
-          <p class="text-sm text-gray-500">{{ orden.cliente_nombre || 'Sin nombre' }}</p>
-        </div>
-        <div class="flex items-center gap-3">
-          <div class="text-right">
-            <span
-              class="text-xs font-medium px-2 py-1 rounded-full"
-              :class="estadoClase(orden.estado)"
-            >{{ orden.estado }}</span>
-            <p class="text-sm font-semibold mt-1">${{ orden.total.toFixed(2) }}</p>
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="font-semibold text-gray-800">{{ orden.numero_orden }}</p>
+            <p class="text-sm text-gray-500">{{ orden.cliente_nombre || 'Sin nombre' }}</p>
           </div>
-          <button
-            @click="imprimirTicket(orden)"
-            title="Reimprimir ticket"
-            class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1.5 rounded-lg font-medium shrink-0"
-          >
-            🖨️
-          </button>
+          <div class="flex items-center gap-3">
+            <div class="text-right">
+              <span
+                class="text-xs font-medium px-2 py-1 rounded-full"
+                :class="estadoClase(orden.estado)"
+              >{{ orden.estado }}</span>
+              <p class="text-sm font-semibold mt-1">${{ orden.total.toFixed(2) }}</p>
+            </div>
+            <button
+              @click="imprimir(orden)"
+              :disabled="impresion.enviando"
+              title="Reimprimir ticket"
+              class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1.5 rounded-lg font-medium shrink-0"
+            >
+              🖨️
+            </button>
+          </div>
         </div>
+        <!-- Mensajes del último ticket enviado, solo en su fila -->
+        <EstadoImpresionTicket v-if="filaActiva === orden.id" :impresion="impresion" class="mt-2" />
+        <HistorialImpresion :orden-id="orden.id" class="mt-1" />
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { imprimirTicket } from '@/utils/ticket.js'
+import { reactive, ref } from 'vue'
+import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
+import HistorialImpresion from '@/components/HistorialImpresion.vue'
+import { useImpresionTicket } from '@/utils/impresionTicket.js'
 
 defineProps({
   ordenes: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
 })
+
+// Un solo flujo para toda la lista; los mensajes se muestran en la fila de
+// la última orden enviada.
+const impresion = reactive(useImpresionTicket())
+const filaActiva = ref(null)
+function imprimir(orden) {
+  filaActiva.value = orden.id
+  impresion.imprimir(orden)
+}
 
 function estadoClase(estado) {
   return {
