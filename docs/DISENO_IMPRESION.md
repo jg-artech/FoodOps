@@ -380,13 +380,23 @@ Nuevo router, `router_impresion.py`, prefix `/api/impresion` (cruza caja y
 
 | Método | Ruta | Roles | Qué hace |
 |---|---|---|---|
-| `POST` | `/api/impresion/ticket` | `ROLES_IMPRESION_TICKET` (§2) | Body `{orden_id}`. Arma el `payload` JSON a partir de la orden (reutilizando lo que hoy arma `_orden_dict`), crea el trabajo `TICKET`. **Nunca** crea un trabajo `ABRIR_CAJON` — imprimir o reimprimir (botón manual, cualquier número de veces) no abre el cajón bajo ninguna circunstancia; eso ya pasó (o no) en `confirmar-cobro` (ver fila siguiente y §12). Momento en que el frontend llama a este endpoint, según `metodo_pago`: si es `"efectivo"`, **después** de que `ROLES_ABRIR_CAJON` confirme la recepción (`POST /ordenes/{id}/confirmar-cobro`, §12); si es `"tarjeta"` o `"transferencia"`, **al cobrar** — no hay recepción física que confirmar en esos métodos, así que no hay nada que esperar. **El backend lo hace cumplir**: si la orden es `metodo_pago = "efectivo"` y `estado_cobro = "pendiente_recibir"`, responde **409** sin crear el trabajo; tras `confirmar-cobro` se acepta (201). También responde 409 si la tienda no tiene `impresora_activa` (el frontend cae a `window.print()`). |
+| `POST` | `/api/impresion/ticket` | `ROLES_IMPRESION_TICKET` (§2) | Body `{orden_id}`. Arma el `payload` JSON a partir de la orden (reutilizando lo que hoy arma `_orden_dict`), crea el trabajo `TICKET`. **Nunca** crea un trabajo `ABRIR_CAJON` — imprimir o reimprimir (botón manual, cualquier número de veces) no abre el cajón bajo ninguna circunstancia; eso ya pasó (o no) en `confirmar-cobro` (ver fila siguiente y §12). Momento en que el frontend llama a este endpoint, según `metodo_pago`: si es `"efectivo"`, **después** de que `ROLES_ABRIR_CAJON` confirme la recepción (`POST /ordenes/{id}/confirmar-cobro`, §12); si es `"tarjeta"` o `"transferencia"`, **al cobrar** — no hay recepción física que confirmar en esos métodos, así que no hay nada que esperar. **El backend lo hace cumplir** con dos 409, ambos con `detail = {"codigo": "...", "mensaje": "..."}` (el frontend decide por `detail.codigo`, nunca por el texto), revisados **en este orden**: (1) **`IMPRIMIR_INACTIVA`** — la tienda no tiene `impresora_activa`; el frontend cae a `window.print()` sin mostrar error; (2) **`PENDIENTE_RECIBIR`** — la orden es `metodo_pago = "efectivo"` con `estado_cobro = "pendiente_recibir"`; no crea el trabajo y el frontend no usa `window.print()`; tras `confirmar-cobro` se acepta (201). Ver la excepción transitoria debajo de esta tabla. |
 | `POST` (ya existe, `router_ordenes.py`, fuera de este router) | `/api/ordenes/{orden_id}/confirmar-cobro` | mismo set de roles que `ROLES_ABRIR_CAJON` (§2) — ya implementado así en producción | **Ya desplegado**, no es parte de este diseño. Mueve `orden.estado_cobro` de `"pendiente_recibir"` a `"cobrada"` (§12). **Es el único punto de todo el sistema que crea el trabajo `ABRIR_CAJON` automático** (`motivo="cobro_efectivo"`, `orden_id` de la orden), y lo crea **una sola vez por orden**: si ya existe un trabajo `ABRIR_CAJON` con ese `orden_id`, no crea otro, así se reintente la confirmación o se reimprima el ticket cualquier cantidad de veces después. |
 | `POST` | `/api/impresion/abrir-cajon` | `ROLES_ABRIR_CAJON` (§2) | Body `{motivo: str}` obligatorio (mínimo ~5 caracteres). `TOMADOR_ORDEN` → 403 + `registrar_auditoria(accion="INTENTO_ABRIR_CAJON_DENEGADO", ...)`. Cualquier otro rol fuera de `ROLES_ABRIR_CAJON` → 403. **Nota de nombre**: la ruta se llama `abrir-cajon`, no `abrir-caja`, a propósito — `abrir-caja` ya existe en `router_caja.py` y es la apertura financiera del día, algo completamente distinto. Este es el botón **manual**, independiente del automático de `confirmar-cobro`. |
 | `GET` | `/api/impresion/trabajos` | cualquiera de `ROLES_IMPRESION_TICKET` | `?punto_id=` (gerencia) `&orden_id=` `&estado=`. Para que el frontend muestre "tu ticket: ✅ impreso / ⏳ pendiente / ❌ falló, reintentar". |
 | `POST` | `/api/impresion/trabajos/{id}/reintentar` | igual que quien lo creó o gerencia de esa tienda | Solo si `estado == "error"`. Vuelve a `PENDIENTE`, limpia `error`, no crea un trabajo nuevo (mismo `id`, mismo `created_at`, para no perder trazabilidad). Un `ABRIR_CAJON` solo lo reintenta un rol de `ROLES_ABRIR_CAJON`, y si ya caducó (§5, 120s) responde 409. |
 | `GET` | `/api/impresion/agente/estado` | `_ROLES_TIENDA` + `GERENTE_PUNTO` (gerencia/responsable de esa tienda) | `?punto_id=`. Heartbeat (decisión 7, §11): `{conectado: bool, ultima_conexion_at}`. "Conectado" = `ultima_conexion_at` dentro de los últimos 30 segundos — mismo margen que el timeout de §5, y coherente con un agente que haga poll cada ~5-10s (valor recomendado para la fase de implementación del agente, no bloqueante aquí). |
 | `POST` | `/api/puntos-venta/{id}/regenerar-token-agente` | `ADMIN`/`GERENTE_GENERAL` | Ver §6. Devuelve el token en texto plano **una sola vez**. |
+
+**Excepción transitoria (ticket de efectivo sin agente).** Mientras una
+tienda no tenga impresora por agente activa (`impresora_activa = false`), el
+ticket de una orden en efectivo pendiente de recibir se imprime con
+`window.print()` desde el navegador. Esto contradice la regla de imprimir
+después de la confirmación y se acepta como excepción temporal, porque
+ninguna tienda tiene agente hoy. Se elimina cuando la tienda tenga
+`impresora_activa = true`. (Es la consecuencia directa del orden de las
+revisiones de `POST /ticket`: `IMPRIMIR_INACTIVA` se evalúa antes que
+`PENDIENTE_RECIBIR`.)
 
 **Reutilización explícita, no reinventar**: `exigir_punto_propio`,
 `exigir_acceso_a_punto`, `requiere_rol`, `registrar_auditoria` ya existen en
@@ -568,6 +578,13 @@ impresión.
   dos acciones independientes, con disparadores distintos y en momentos
   distintos (ticket de efectivo: después de confirmar-cobro; ticket de
   tarjeta/transferencia: al cobrar, ver §7).
+- **Impresión después de la confirmación**: el botón "Imprimir ticket" de
+  Cobros pendientes (`CobrosPendientesView`, visible tras confirmar un
+  cobro) es el camino de impresión después de la confirmación para
+  **todas las tiendas**. Usa el mismo flujo que el resto de la app: con
+  `impresora_activa = true` encola el `TICKET` para el agente; sin ella,
+  `POST /ticket` responde `IMPRIMIR_INACTIVA` y se imprime con
+  `window.print()`.
 
 **Pendiente, sin decidir**: si al registrar una orden en efectivo (queda en
 `estado_cobro = "pendiente_recibir"`, antes de que nadie confirme nada) se
