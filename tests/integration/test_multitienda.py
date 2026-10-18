@@ -257,11 +257,15 @@ def test_gerente_general_sin_punto_id_ve_las_ordenes_de_todas_las_tiendas(api, d
     gg = datos["gerente_general"]
     r = api.get("/api/ordenes/", headers=_auth(gg))
     assert r.status_code == 200
-    # Subset, no igualdad exacta: otros tests del mismo módulo crean órdenes
-    # adicionales en Centro sobre este fixture compartido (scope="module").
+    # Subset, no igualdad exacta ni "todo pertenece solo a estas dos
+    # tiendas": la BD de pruebas es compartida entre TODOS los archivos de
+    # tests en la misma corrida de pytest (mismo engine/sesión), y GG sin
+    # punto_id ve literalmente todas las tiendas que existan en ese momento
+    # - otros módulos (ej. test_cobro_efectivo.py) crean sus propias
+    # tiendas y órdenes ahí. Lo que esta prueba necesita confirmar es que
+    # las dos órdenes de ESTE fixture son visibles, no que sean las únicas.
     numeros = {o["numero_orden"] for o in r.json()}
     assert {"ORD-CENTRO-1", "ORD-JORDAN-1"} <= numeros
-    assert all(o["punto_id"] in (datos["centro"], datos["jordan"]) for o in r.json())
 
 
 def test_gerente_general_sin_punto_id_recibe_todas_las_tiendas(api, datos):
