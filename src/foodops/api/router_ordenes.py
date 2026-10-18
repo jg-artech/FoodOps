@@ -30,6 +30,7 @@ from foodops.db.models import (
     Usuario,
 )
 from foodops.db.models_stock import ProductoComponente, ProductoMenu, TransaccionComponente
+from foodops.domain.impresion import encolar_cajon_por_cobro
 from foodops.domain.schemas import ConfirmarCobroRequest, CrearTransaccionRequest, OrdenCreate
 
 logger = logging.getLogger(__name__)
@@ -362,6 +363,10 @@ def confirmar_cobro_efectivo(
                 "vuelto_esperado": float(orden.vuelto) if orden.vuelto is not None else None,
             },
         )
+        # Abre el cajón físico una sola vez por orden, solo si la tienda tiene
+        # cajon_activo (docs/DISENO_IMPRESION.md §7). Nunca bloquea el cobro:
+        # va en un SAVEPOINT y un fallo se descarta (§8).
+        encolar_cajon_por_cobro(session, orden, current_user.user_id)
         session.commit()
 
         items = session.execute(select(OrdenItem).where(OrdenItem.orden_id == orden.id)).scalars().all()
