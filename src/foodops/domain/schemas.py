@@ -104,6 +104,14 @@ class OrdenCreate(BaseModel):
     vuelto: Optional[Precio] = None
 
 
+class ConfirmarCobroRequest(BaseModel):
+    """Lo que el responsable confirma al recibir el efectivo físicamente -
+    puede diferir del dinero_recibido/vuelto que estimó el vendedor al
+    crear la orden, por eso son campos obligatorios y no se copian solos."""
+    monto_recibido: Precio
+    vuelto_entregado: Precio
+
+
 class OrdenResponse(BaseModel):
     id: int
     numero_orden: str
