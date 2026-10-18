@@ -10,6 +10,20 @@
     <EstadoAgente class="mb-3" />
     <AbrirCajon class="mb-4" />
 
+    <!-- Último cobro confirmado: el ticket de efectivo se imprime ahora (§7, §12) -->
+    <div v-if="ultimaConfirmada" class="bg-green-50 border border-green-200 rounded-2xl p-4 mb-4">
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-sm text-green-700">
+          ✅ Cobro de <strong>{{ ultimaConfirmada.numero_orden }}</strong> confirmado.
+        </p>
+        <button @click="impresion.imprimir(ultimaConfirmada)" :disabled="impresion.enviando"
+          class="bg-gray-800 hover:bg-gray-900 text-white text-sm font-semibold px-3 py-2 rounded-xl shrink-0 disabled:opacity-60">
+          🖨️ Imprimir ticket
+        </button>
+      </div>
+      <EstadoImpresionTicket :impresion="impresion" class="mt-2" />
+    </div>
+
     <div v-if="loading" class="text-center py-12 text-gray-400">Cargando...</div>
 
     <div v-else-if="ordenes.length === 0" class="bg-white rounded-2xl border border-gray-200 shadow-sm py-12 text-center">
@@ -94,6 +108,8 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import AbrirCajon from '@/components/AbrirCajon.vue'
 import EstadoAgente from '@/components/EstadoAgente.vue'
+import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
+import { useImpresionTicket } from '@/utils/impresionTicket.js'
 
 const ordenes = ref([])
 const loading = ref(true)
@@ -103,6 +119,11 @@ const ordenActiva = ref(null)
 const modalError = ref('')
 const guardando = ref(false)
 const form = reactive({ monto_recibido: null, vuelto_entregado: null })
+
+// Orden recién confirmada, para ofrecer "Imprimir ticket" (mismo flujo que
+// el resto de la app: agente si está activo, window.print() si no).
+const ultimaConfirmada = ref(null)
+const impresion = reactive(useImpresionTicket())
 
 function horaFormato(fecha) {
   if (!fecha) return ''
@@ -146,10 +167,18 @@ async function confirmarCobro() {
   }
   guardando.value = true
   try {
-    await api.post(`/api/ordenes/${ordenActiva.value.id}/confirmar-cobro`, {
+    const { data } = await api.post(`/api/ordenes/${ordenActiva.value.id}/confirmar-cobro`, {
       monto_recibido: form.monto_recibido,
       vuelto_entregado: form.vuelto_entregado,
     })
+    // La respuesta no trae tomada_por_nombre; se conserva el de la lista
+    // para el ticket impreso desde el navegador.
+    impresion.limpiar()
+    ultimaConfirmada.value = {
+      ...ordenActiva.value,
+      ...data,
+      tomada_por_nombre: data.tomada_por_nombre ?? ordenActiva.value.tomada_por_nombre,
+    }
     ordenes.value = ordenes.value.filter((o) => o.id !== ordenActiva.value.id)
     ordenActiva.value = null
   } catch (e) {
