@@ -2,7 +2,9 @@
 
 **Fecha:** 2026-10-18 (actualizado el mismo día con las decisiones de §11 de
 la versión anterior — ver §11 nueva, "Decisiones confirmadas").
-**Fase:** 1 — Auditoría y diseño. **No se implementó nada.**
+**Fase:** 1 — Auditoría y diseño. **Fase 2 implementada en local** (sin
+desplegar); §3, §5 y §7 están alineados con las decisiones de
+implementación.
 **Alcance:** backend `src/foodops`, frontend `foodops-web`. Solo lectura del código existente; no se tocó producción ni ninguna impresora real.
 
 ---
@@ -160,7 +162,7 @@ Los 4 campos que pidieron — **el token del agente NO va aquí** (decisión 3,
 | `impresora_activa` | `Boolean` | no, default `False` | Flag manual para "esta tienda ya tiene impresora funcionando" — permite activar el flujo por tienda de forma gradual sin que las demás se queden esperando trabajos que nadie va a recoger. |
 | `cajon_activo` | `Boolean` | no, default `False` | Independiente de `impresora_activa`: una tienda puede tener impresora pero el cajón desconectado del RJ11, o viceversa. Si es `False`, el backend nunca genera trabajos `ABRIR_CAJON` para esa tienda aunque el rol lo permita. |
 
-Migración futura (no en esta fase): `011_impresion_agente.py`, agregando
+Migración: `012_impresion_agente.py` (la 011 ya es `011_estado_cobro`), agregando
 estas 4 columnas a `puntos_venta` más las tablas nuevas de §5 y §6, con
 defaults explícitos (`impresora_activa`/`cajon_activo` en `False` para
 Centro, Jordán y Auxiliar hasta que confirmen cada impresora lista).
@@ -213,31 +215,28 @@ token de agente) se registran igual, sin cambios al modelo de auditoría.
 `orden_id` incluido (decisión 4, §11). Timeout de reintento confirmado en
 30 segundos (decisión 6, §11).
 
+**Tipos reales (implementación, migración `012_impresion_agente`):** `tipo`
+y `estado` son **texto con `CHECK`**, no `Enum` nativo de Postgres — misma
+convención que `ordenes.estado_cobro` (migración 011): evita `ALTER TYPE`
+para agregar un valor y la confusión nombre/valor del `Enum` de
+SQLAlchemy. Los valores son constantes en `models.py`
+(`TRABAJO_TIPO_*`, `TRABAJO_ESTADO_*`).
+
 ```python
-class TipoTrabajoImpresion(str, enum.Enum):
-    TICKET = "ticket"
-    ABRIR_CAJON = "abrir_cajon"
-
-class EstadoTrabajoImpresion(str, enum.Enum):
-    PENDIENTE = "pendiente"
-    IMPRIMIENDO = "imprimiendo"
-    OK = "ok"
-    ERROR = "error"
-
 class TrabajoImpresion(Base):
     __tablename__ = "trabajos_impresion"
 
     id = Column(BigInteger, primary_key=True)
     punto_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=False)
-    tipo = Column(Enum(TipoTrabajoImpresion), nullable=False)
+    tipo = Column(String(20), nullable=False)       # 'ticket' | 'abrir_cajon'
     # JSON estructurado, NUNCA HTML (ver §9.1) - el agente arma el ESC/POS
     # a partir de esto, no corre JS del navegador.
     payload = Column(JSON, nullable=False, default=dict)
-    estado = Column(Enum(EstadoTrabajoImpresion), nullable=False,
-                     default=EstadoTrabajoImpresion.PENDIENTE)
+    estado = Column(String(20), nullable=False, default="pendiente")
+    #                 'pendiente' | 'imprimiendo' | 'ok' | 'error'
     solicitado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
-    # Obligatorio para ABRIR_CAJON manual; para automático, un valor fijo
-    # como "cobro_efectivo"; opcional/NULL para TICKET.
+    # Obligatorio para ABRIR_CAJON manual; para automático, el valor fijo
+    # "cobro_efectivo"; NULL para TICKET.
     motivo = Column(String(200), nullable=True)
     orden_id = Column(Integer, ForeignKey("ordenes.id"), nullable=True)
 
@@ -247,7 +246,17 @@ class TrabajoImpresion(Base):
     error = Column(Text, nullable=True)                # detalle si estado=ERROR
 
     __table_args__ = (
+        CheckConstraint("tipo IN ('ticket', 'abrir_cajon')",
+                        name="ck_trabajos_impresion_tipo"),
+        CheckConstraint("estado IN ('pendiente', 'imprimiendo', 'ok', 'error')",
+                        name="ck_trabajos_impresion_estado"),
         Index("ix_trabajos_impresion_punto_estado", "punto_id", "estado"),
+        Index("ix_trabajos_impresion_orden", "orden_id"),
+        # Índice único PARCIAL: a lo sumo un ABRIR_CAJON por orden; TICKET
+        # sin límite (reimpresiones). Los ABRIR_CAJON manuales tienen
+        # orden_id NULL y en Postgres los NULL no chocan.
+        Index("ux_trabajos_impresion_cajon_por_orden", "orden_id",
+              unique=True, postgresql_where=text("tipo = 'abrir_cajon'")),
     )
 ```
 
@@ -257,6 +266,36 @@ agente toma un trabajo (`GET pendientes` lo marca `IMPRIMIENDO` +
 `tomado_at` de hace más de 30 segundos y que sigue `IMPRIMIENDO` vuelve a
 aparecer como elegible en el próximo `GET pendientes` (de ese agente o de
 otro, si llegaran a correr dos instancias por error).
+
+**Caducidad del cajón (120s).** Un `ABRIR_CAJON` cuyo `created_at` tiene
+más de 120 segundos **no se ejecuta**: abrir la gaveta minutos después del
+cobro (agente que vuelve de estar apagado, reentrega tardía) la dejaría
+abierta sin nadie esperándola. Si el agente lo recoge después de ese plazo,
+`GET pendientes` no se lo entrega: lo pasa a `ERROR` con `error =
+"caducado"` (más `audit_log` `ABRIR_CAJON_CADUCADO`) y el pulso nunca sale.
+Aplica igual a uno `IMPRIMIENDO` vencido. Reintentar un `ABRIR_CAJON`
+caducado responde 409: si todavía hace falta abrir, se usa el botón manual
+con motivo. Los `TICKET` no caducan.
+
+**Idempotencia del agente ante reinicios — opción elegida: registro local
+de impresos (b).** Justificación: marcar el trabajo como impreso al
+entregarlo (opción a) perdería el trabajo si el agente se cae antes de
+imprimir, que es justo lo que cubre la reentrega de 30s. Cómo funciona:
+
+1. El agente imprime y, **antes de reportar**, guarda el id del trabajo en
+   un archivo local fuera del repo (`FOODOPS_ARCHIVO_IMPRESOS`; por defecto
+   `%LOCALAPPDATA%\FoodOpsAgente\impresos.json` en Windows), con escritura
+   atómica (temporal + `fsync` + `os.replace`).
+2. Si se reinicia antes de reportar, el backend le reentrega el trabajo a
+   los 30s; el agente encuentra el id en el archivo y **solo reporta `ok`**,
+   sin imprimir ni abrir el cajón otra vez.
+3. Solo se registran los trabajos impresos con éxito: uno en `ERROR` que se
+   reintenta desde el sistema sí se vuelve a imprimir. El archivo guarda los
+   últimos 5000 ids.
+
+Ventana residual aceptada: si el proceso muere justo entre el envío a la
+impresora y la escritura del archivo, ese trabajo se imprime otra vez. Ver
+`RegistroImpresos` en `tools/agente_impresion/agente.py`.
 
 ---
 
@@ -341,11 +380,11 @@ Nuevo router, `router_impresion.py`, prefix `/api/impresion` (cruza caja y
 
 | Método | Ruta | Roles | Qué hace |
 |---|---|---|---|
-| `POST` | `/api/impresion/ticket` | `ROLES_IMPRESION_TICKET` (§2) | Body `{orden_id}`. Arma el `payload` JSON a partir de la orden (reutilizando lo que hoy arma `_orden_dict`), crea el trabajo `TICKET`. **Nunca** crea un trabajo `ABRIR_CAJON` — imprimir o reimprimir (botón manual, cualquier número de veces) no abre el cajón bajo ninguna circunstancia; eso ya pasó (o no) en `confirmar-cobro` (ver fila siguiente y §12). Momento en que el frontend llama a este endpoint, según `metodo_pago`: si es `"efectivo"`, **después** de que `ROLES_ABRIR_CAJON` confirme la recepción (`POST /ordenes/{id}/confirmar-cobro`, §12); si es `"tarjeta"` o `"transferencia"`, **al cobrar** — no hay recepción física que confirmar en esos métodos, así que no hay nada que esperar. |
+| `POST` | `/api/impresion/ticket` | `ROLES_IMPRESION_TICKET` (§2) | Body `{orden_id}`. Arma el `payload` JSON a partir de la orden (reutilizando lo que hoy arma `_orden_dict`), crea el trabajo `TICKET`. **Nunca** crea un trabajo `ABRIR_CAJON` — imprimir o reimprimir (botón manual, cualquier número de veces) no abre el cajón bajo ninguna circunstancia; eso ya pasó (o no) en `confirmar-cobro` (ver fila siguiente y §12). Momento en que el frontend llama a este endpoint, según `metodo_pago`: si es `"efectivo"`, **después** de que `ROLES_ABRIR_CAJON` confirme la recepción (`POST /ordenes/{id}/confirmar-cobro`, §12); si es `"tarjeta"` o `"transferencia"`, **al cobrar** — no hay recepción física que confirmar en esos métodos, así que no hay nada que esperar. **El backend lo hace cumplir**: si la orden es `metodo_pago = "efectivo"` y `estado_cobro = "pendiente_recibir"`, responde **409** sin crear el trabajo; tras `confirmar-cobro` se acepta (201). También responde 409 si la tienda no tiene `impresora_activa` (el frontend cae a `window.print()`). |
 | `POST` (ya existe, `router_ordenes.py`, fuera de este router) | `/api/ordenes/{orden_id}/confirmar-cobro` | mismo set de roles que `ROLES_ABRIR_CAJON` (§2) — ya implementado así en producción | **Ya desplegado**, no es parte de este diseño. Mueve `orden.estado_cobro` de `"pendiente_recibir"` a `"cobrada"` (§12). **Es el único punto de todo el sistema que crea el trabajo `ABRIR_CAJON` automático** (`motivo="cobro_efectivo"`, `orden_id` de la orden), y lo crea **una sola vez por orden**: si ya existe un trabajo `ABRIR_CAJON` con ese `orden_id`, no crea otro, así se reintente la confirmación o se reimprima el ticket cualquier cantidad de veces después. |
 | `POST` | `/api/impresion/abrir-cajon` | `ROLES_ABRIR_CAJON` (§2) | Body `{motivo: str}` obligatorio (mínimo ~5 caracteres). `TOMADOR_ORDEN` → 403 + `registrar_auditoria(accion="INTENTO_ABRIR_CAJON_DENEGADO", ...)`. Cualquier otro rol fuera de `ROLES_ABRIR_CAJON` → 403. **Nota de nombre**: la ruta se llama `abrir-cajon`, no `abrir-caja`, a propósito — `abrir-caja` ya existe en `router_caja.py` y es la apertura financiera del día, algo completamente distinto. Este es el botón **manual**, independiente del automático de `confirmar-cobro`. |
 | `GET` | `/api/impresion/trabajos` | cualquiera de `ROLES_IMPRESION_TICKET` | `?punto_id=` (gerencia) `&orden_id=` `&estado=`. Para que el frontend muestre "tu ticket: ✅ impreso / ⏳ pendiente / ❌ falló, reintentar". |
-| `POST` | `/api/impresion/trabajos/{id}/reintentar` | igual que quien lo creó o gerencia de esa tienda | Solo si `estado == "error"`. Vuelve a `PENDIENTE`, limpia `error`, no crea un trabajo nuevo (mismo `id`, mismo `created_at`, para no perder trazabilidad). |
+| `POST` | `/api/impresion/trabajos/{id}/reintentar` | igual que quien lo creó o gerencia de esa tienda | Solo si `estado == "error"`. Vuelve a `PENDIENTE`, limpia `error`, no crea un trabajo nuevo (mismo `id`, mismo `created_at`, para no perder trazabilidad). Un `ABRIR_CAJON` solo lo reintenta un rol de `ROLES_ABRIR_CAJON`, y si ya caducó (§5, 120s) responde 409. |
 | `GET` | `/api/impresion/agente/estado` | `_ROLES_TIENDA` + `GERENTE_PUNTO` (gerencia/responsable de esa tienda) | `?punto_id=`. Heartbeat (decisión 7, §11): `{conectado: bool, ultima_conexion_at}`. "Conectado" = `ultima_conexion_at` dentro de los últimos 30 segundos — mismo margen que el timeout de §5, y coherente con un agente que haga poll cada ~5-10s (valor recomendado para la fase de implementación del agente, no bloqueante aquí). |
 | `POST` | `/api/puntos-venta/{id}/regenerar-token-agente` | `ADMIN`/`GERENTE_GENERAL` | Ver §6. Devuelve el token en texto plano **una sola vez**. |
 
