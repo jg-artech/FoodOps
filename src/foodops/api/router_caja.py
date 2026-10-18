@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import and_, create_engine, func, or_, select
 from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
@@ -18,7 +18,10 @@ from foodops.core.auth import (
     resolver_punto_id,
 )
 from foodops.core.config import settings
-from foodops.db.models import PuntoVenta, TransaccionVenta
+from foodops.db.models import Orden, OrdenEstado, PuntoVenta, TransaccionVenta
+# Mismo patrón que router_gerencia.py importando de router_stock: reutiliza
+# el valor en vez de duplicar el literal "cobrada" en dos archivos.
+from foodops.api.router_ordenes import ESTADO_COBRO_COBRADA, ESTADO_COBRO_PENDIENTE
 from foodops.db.models_caja import (
     CajaDiaria,
     Desperdicio,
@@ -171,12 +174,34 @@ def _fondo_dict(f: FondoRepartidor) -> dict:
 def _calcular_efectivo_esperado(session, caja: CajaDiaria) -> Decimal:
     day_start, day_end = _day_bounds(caja.fecha)
 
+    # Solo cuenta efectivo ya CONFIRMADO por el responsable (ver
+    # confirmar_cobro_efectivo en router_ordenes.py) - antes de este cambio
+    # una venta en efectivo entraba al cuadre apenas se creaba la orden, sin
+    # que nadie hubiera confirmado haber recibido el dinero (ver
+    # docs/AUDITORIA_COBRO_EFECTIVO.md, hallazgo crítico #2: cancelar una
+    # orden tampoco sacaba su venta del cuadre, porque TransaccionVenta
+    # nunca se tocaba al cancelar - eso también queda arreglado aquí, de
+    # paso, al excluir Orden.estado == CANCELADO).
+    #
+    # TransaccionVenta.orden_id es nullable (ventas tipo "iniciativa" sin
+    # orden asociada, fuera del alcance de este cambio): esas se siguen
+    # contando igual que siempre (LEFT JOIN + orden_id IS NULL).
     ventas_efectivo = session.execute(
-        select(func.coalesce(func.sum(TransaccionVenta.precio_venta), 0)).where(
+        select(func.coalesce(func.sum(TransaccionVenta.precio_venta), 0))
+        .select_from(TransaccionVenta)
+        .outerjoin(Orden, Orden.id == TransaccionVenta.orden_id)
+        .where(
             TransaccionVenta.punto_id == caja.punto_id,
             TransaccionVenta.metodo_pago == "efectivo",
             TransaccionVenta.created_at >= day_start,
             TransaccionVenta.created_at < day_end,
+            or_(
+                TransaccionVenta.orden_id.is_(None),
+                and_(
+                    Orden.estado_cobro == ESTADO_COBRO_COBRADA,
+                    Orden.estado != OrdenEstado.CANCELADO,
+                ),
+            ),
         )
     ).scalar_one()
 
@@ -369,6 +394,25 @@ def cerrar_caja(
     try:
         punto_id = exigir_punto_propio(current_user)
         caja = _get_caja_abierta(session, punto_id)
+
+        # No se puede cerrar con efectivo sin confirmar: cada orden
+        # PENDIENTE_RECIBIR es dinero que, hasta este momento, nadie ha
+        # verificado que realmente llegó a la caja.
+        pendientes = session.execute(
+            select(func.count(Orden.id)).where(
+                Orden.punto_id == punto_id,
+                Orden.estado_cobro == ESTADO_COBRO_PENDIENTE,
+                Orden.estado != OrdenEstado.CANCELADO,
+            )
+        ).scalar_one()
+        if pendientes:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"No se puede cerrar la caja: hay {pendientes} orden(es) "
+                    "en efectivo sin confirmar el cobro"
+                ),
+            )
 
         inv_cierre = session.execute(
             select(InventarioDiario).where(
