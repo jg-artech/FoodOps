@@ -17,17 +17,38 @@ Cantidad = Annotated[int, Field(ge=1, le=999)]
 
 
 class UsuarioCreate(BaseModel):
-    username: Annotated[str, Field(max_length=200)]
+    username: Annotated[str, Field(max_length=100)]
     email: EmailStr
     password: Annotated[str, Field(min_length=8, max_length=128)]
-    nombre_completo: NombreStr
+    nombre_completo: Optional[NombreStr] = None
+    # Valor de UserRol (ej. "tomador_orden"), validado en el router contra
+    # el enum real - aquí es solo un string para no importar el modelo.
+    rol: Annotated[str, Field(max_length=30)]
+    # Obligatorio salvo para los roles de ROLES_MULTI_TIENDA (ver core.auth).
+    # El router valida que la tienda exista y que el rol la necesite.
+    punto_id: Optional[int] = None
+
+
+class UsuarioUpdate(BaseModel):
+    """Todos los campos opcionales: solo se actualiza lo que venga."""
+    nombre_completo: Optional[NombreStr] = None
+    rol: Optional[Annotated[str, Field(max_length=30)]] = None
+    punto_id: Optional[int] = None
+    activo: Optional[bool] = None
+    # Resetear contraseña desde el panel de administración, no hay endpoint
+    # de "cambiar mi contraseña" todavía.
+    password: Optional[Annotated[str, Field(min_length=8, max_length=128)]] = None
 
 
 class UsuarioResponse(BaseModel):
     id: int
     username: str
     email: str
-    nombre_completo: str
+    nombre_completo: Optional[str] = None
+    rol: str
+    punto_id: Optional[int] = None
+    punto_nombre: Optional[str] = None
+    activo: bool
 
     class Config:
         from_attributes = True
