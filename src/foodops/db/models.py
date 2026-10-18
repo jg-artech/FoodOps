@@ -104,13 +104,29 @@ class Orden(Base):
     estado = Column(Enum(OrdenEstado), default=OrdenEstado.PENDIENTE)
     metodo_pago = Column(Enum(MetodoPago))
     total = Column(Float, nullable=False)
-    dinero_recibido = Column(Float)
-    vuelto = Column(Float)
+    dinero_recibido = Column(Float)  # lo que el vendedor estimó al crear la orden
+    vuelto = Column(Float)           # vuelto ESPERADO, calculado por el vendedor
     es_domicilio = Column(Boolean, default=False)
     notas_especiales = Column(Text)
     tomada_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     actualizado_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Estado de cobro: eje independiente de `estado` (que es exclusivamente
+    # de cocina - ver docs/AUDITORIA_COBRO_EFECTIVO.md, hallazgo crítico).
+    # String simple, no Enum nativo de Postgres, igual que CajaDiaria.estado/
+    # TransaccionVenta.estado/PedidoReabastecimiento.estado en el resto del
+    # proyecto - evita el ALTER TYPE ADD VALUE para agregar un estado futuro.
+    # Valores: "pendiente_recibir" | "cobrada". Las órdenes que no son en
+    # efectivo nacen directamente en "cobrada" (tarjeta/transferencia se
+    # confirman al momento, no hay entrega física de efectivo que esperar).
+    estado_cobro = Column(String(20), nullable=False, default="cobrada")
+    # Confirmados por el responsable al recibir el efectivo - distintos de
+    # dinero_recibido/vuelto (el estimado del vendedor), aunque coincidan.
+    monto_recibido = Column(Float, nullable=True)
+    vuelto_entregado = Column(Float, nullable=True)
+    confirmado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    confirmado_at = Column(DateTime, nullable=True)
 
     punto = relationship("PuntoVenta", back_populates="ordenes")
     items = relationship("OrdenItem", back_populates="orden")
