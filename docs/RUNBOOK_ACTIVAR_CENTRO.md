@@ -207,8 +207,19 @@ powershell -ExecutionPolicy Bypass -File .\instalar_tarea.ps1
 ```
 
 **Esperado del script:** `OK` para cada variable (solo nombres), la versión
-de Python y "Tarea 'FoodOpsAgenteImpresion' instalada". Cierre el agente
-que corría a mano y **reinicie la PC**. Tras iniciar sesión:
+de Python, "Ejecución: pythonw.exe (...)" y "Tarea 'FoodOpsAgenteImpresion'
+instalada". Cierre el agente que corría a mano (Ctrl+C en su consola) y
+**reinicie la PC**.
+
+El agente de la tarea **corre sin ventana**: que no aparezca nada en
+pantalla es lo esperado. Para ver qué hace, revise el log:
+
+```
+Get-Content -Wait -Tail 20 "$env:LOCALAPPDATA\FoodOpsAgente\agente.log"
+```
+
+Tras iniciar sesión, en el log debe aparecer una línea nueva
+`Agente iniciado: ...`, y en el servidor:
 
 ```sql
 select punto_id, activo,
@@ -225,9 +236,16 @@ imprime.
   cuenta: defínalas como en 0.3.
 - El script no encuentra Python o encuentra el de la Store → use
   `-PythonExe "C:\ruta\python.exe"`.
-- La tarea existe pero el agente no corre → `Get-ScheduledTask -TaskName
-  FoodOpsAgenteImpresion | Get-ScheduledTaskInfo` y revise
-  `%LOCALAPPDATA%\FoodOpsAgente\agente.log`.
+- La tarea existe pero el agente no corre → revise primero el log
+  (`%LOCALAPPDATA%\FoodOpsAgente\agente.log`): ahí quedan los errores de
+  configuración, de conexión y los no controlados. Luego `Get-ScheduledTask
+  -TaskName FoodOpsAgenteImpresion | Get-ScheduledTaskInfo`.
+- El script dice "python.exe oculto vía powershell.exe" → no encontró
+  `pythonw.exe`; funciona igual, pero puede verse un parpadeo al iniciar
+  sesión. Con la instalación de python.org se evita.
+- No hay log nuevo y la tarea figura en ejecución → deténgala con
+  `Stop-ScheduledTask -TaskName FoodOpsAgenteImpresion` y arránquela con
+  `Start-ScheduledTask -TaskName FoodOpsAgenteImpresion`.
 - Tras el reinicio nadie inicia sesión → la tarea arranca **al iniciar
   sesión**: configure el inicio de sesión automático de Windows o pida que
   alguien inicie sesión al encender.
@@ -311,7 +329,9 @@ select estado, count(*) from trabajos_impresion where punto_id = <ID_TIENDA> gro
    `imprimiendo`.
 
 5. En la PC de la tienda: `powershell -ExecutionPolicy Bypass -File
-   .\instalar_tarea.ps1 -Desinstalar` y cerrar la consola del agente.
+   .\instalar_tarea.ps1 -Desinstalar` (detiene el agente, que corre sin
+   ventana, y borra la tarea). Confirme en el log que no aparecen líneas
+   nuevas.
 
 Para volver a activar después de un rollback se empieza desde el paso 0.2
 (token nuevo).

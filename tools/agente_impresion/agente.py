@@ -7,8 +7,10 @@ El token del agente nunca se escribe en el log.
 """
 import json
 import logging
+import logging.handlers
 import os
 import socket
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -32,6 +34,55 @@ def ruta_impresos_por_defecto() -> str:
     if base:
         return str(Path(base) / "FoodOpsAgente" / "impresos.json")
     return str(Path.home() / ".local" / "state" / "foodops-agente" / "impresos.json")
+
+
+def ruta_log_por_defecto() -> str:
+    """Mismo directorio que el registro de impresos."""
+    return str(Path(ruta_impresos_por_defecto()).with_name("agente.log"))
+
+
+# Log rotativo: 5 archivos de hasta 5 MB (agente.log, agente.log.1, ...).
+LOG_MAX_BYTES = 5 * 1024 * 1024
+LOG_RESPALDOS = 4
+_FORMATO_LOG = "%(asctime)s %(levelname)s %(message)s"
+
+
+def configurar_log(env=None) -> Optional[str]:
+    """Dónde escribe el agente su log.
+
+    - Con FOODOPS_ARCHIVO_LOG: en ese archivo.
+    - Sin consola (pythonw.exe, como lo arranca la tarea programada, deja
+      sys.stderr en None): en ruta_log_por_defecto(). Sin esto, todo lo que
+      el agente escribe se perdería.
+    - En otro caso: en la consola, como siempre.
+
+    Con archivo, también las excepciones no capturadas van al log. Devuelve
+    la ruta del archivo, o None si se escribe en la consola.
+    """
+    env = os.environ if env is None else env
+    archivo = env.get("FOODOPS_ARCHIVO_LOG") or (
+        ruta_log_por_defecto() if sys.stderr is None else None
+    )
+    raiz = logging.getLogger()
+    for h in list(raiz.handlers):
+        raiz.removeHandler(h)
+        h.close()
+    if archivo:
+        Path(archivo).parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.handlers.RotatingFileHandler(
+            archivo, maxBytes=LOG_MAX_BYTES, backupCount=LOG_RESPALDOS, encoding="utf-8"
+        )
+
+        def _excepcion_no_capturada(tipo, valor, tb):
+            log.critical("Error no controlado, el agente se detiene", exc_info=(tipo, valor, tb))
+
+        sys.excepthook = _excepcion_no_capturada
+    else:
+        handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(_FORMATO_LOG))
+    raiz.addHandler(handler)
+    raiz.setLevel(logging.INFO)
+    return archivo
 
 
 @dataclass(frozen=True)
@@ -257,7 +308,7 @@ class Agente:
 
 
 def main() -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    configurar_log()
     try:
         config = Config.desde_entorno()
     except ConfigError as e:

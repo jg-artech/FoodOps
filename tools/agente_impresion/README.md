@@ -26,6 +26,7 @@ de la impresora, y el navegador no puede abrir un socket TCP crudo.
 | `FOODOPS_TIMEOUT_HTTP` | no | `10` | Timeout de cada request al backend (s) |
 | `FOODOPS_ANCHO_COLUMNAS` | no | `42` | Caracteres por línea (42 para papel de 80 mm, 32 para 58 mm) |
 | `FOODOPS_NOMBRE_NEGOCIO` | no | `Asados a la Leña` | Encabezado del ticket |
+| `FOODOPS_ARCHIVO_LOG` | no | sin consola (`pythonw.exe`): `%LOCALAPPDATA%\FoodOpsAgente\agente.log`; con consola: la consola | Archivo de log (rotativo, 5 archivos de 5 MB). |
 | `FOODOPS_ARCHIVO_IMPRESOS` | no | Windows: `%LOCALAPPDATA%\FoodOpsAgente\impresos.json`; otros: `~/.local/state/foodops-agente/impresos.json` | Registro local de trabajos ya impresos (ver "No reimprimir tras un reinicio"). Debe quedar fuera del repo y de la carpeta del ejecutable. |
 
 ## Token de la tienda
@@ -49,6 +50,10 @@ Desde la carpeta `tools/`:
 cd tools
 python -m agente_impresion
 ```
+
+Con `python.exe` el log sale en la consola. Con `pythonw.exe` (sin
+consola) va al archivo de `FOODOPS_ARCHIVO_LOG` o, por defecto, a
+`%LOCALAPPDATA%\FoodOpsAgente\agente.log`.
 
 ## Activar una tienda
 
@@ -114,21 +119,30 @@ powershell -ExecutionPolicy Bypass -File .\instalar_tarea.ps1 -Desinstalar
   entorno **de su cuenta de usuario** (la tarea no ve las de una ventana
   de PowerShell abierta). El script solo comprueba que existan y muestra
   su nombre, nunca el valor; si falta alguna, se detiene sin crear nada.
-- Ejecuta `python -m agente_impresion` con `tools\` como directorio de
-  trabajo y agrega la salida a `%LOCALAPPDATA%\FoodOpsAgente\agente.log`.
+- **Corre sin ventana**: usa `pythonw.exe` (junto al `python.exe` elegido)
+  con `tools\` como directorio de trabajo. Si no hay `pythonw.exe`, lanza
+  `python.exe` oculto desde `powershell.exe -WindowStyle Hidden` (puede
+  verse un parpadeo al iniciar sesión).
+- **El log lo escribe el propio agente** en
+  `%LOCALAPPDATA%\FoodOpsAgente\agente.log` (o en `FOODOPS_ARCHIVO_LOG`),
+  rotativo: 5 archivos de hasta 5 MB. Ahí van también los errores no
+  controlados. Como no hay consola, **para ver qué hace el agente se revisa
+  el log**: `Get-Content -Wait -Tail 20 "$env:LOCALAPPDATA\FoodOpsAgente\agente.log"`.
 - Reintenta cada minuto (hasta 999 veces) si falla, sigue con batería y no
   tiene límite de tiempo.
 - Arranca al **iniciar sesión**: la PC tiene que entrar sola a la cuenta de
   Windows (inicio de sesión automático) o alguien tiene que iniciar sesión
   después de cada reinicio.
-- La ventana de consola del agente queda abierta: no la cierre. Si se
-  cierra, el agente se detiene; no está verificado si el reintento de la
-  tarea lo vuelve a arrancar. Para relanzarlo: `Start-ScheduledTask
-  -TaskName FoodOpsAgenteImpresion` o cerrar e iniciar sesión.
-- El log crece sin límite; revíselo o vacíelo de vez en cuando.
+- Detener: `Stop-ScheduledTask -TaskName FoodOpsAgenteImpresion`.
+  Arrancar sin reiniciar: `Start-ScheduledTask -TaskName FoodOpsAgenteImpresion`.
+  Estado: `Get-ScheduledTask -TaskName FoodOpsAgenteImpresion | Get-ScheduledTaskInfo`.
 
-**No probado en Windows todavía**: solo se revisó la sintaxis y que los
-parámetros de los cmdlets existan. Ver `docs/RUNBOOK_ACTIVAR_CENTRO.md`.
+**Qué está probado y qué no**: en Windows 10/11 se probó el agente con
+`pythonw.exe` fuera de la tarea (escribe el log en UTF-8, registra el error
+de configuración y los reintentos, no escribe el token). La tarea
+programada en sí **no se probó**: del script solo se revisó la sintaxis y
+que existan los parámetros de los cmdlets. Ver
+`docs/RUNBOOK_ACTIVAR_CENTRO.md`.
 
 ## Pendiente (fase de empaquetado)
 

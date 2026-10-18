@@ -402,3 +402,88 @@ def test_registro_se_acota(tmp_path, monkeypatch):
         r.agregar(i)
     r2 = RegistroImpresos(str(tmp_path / "impresos.json"))
     assert [r2.contiene(i) for i in range(5)] == [False, False, True, True, True]
+
+
+# ---------------------------------------------------------------------------
+# Log del agente sin consola (pythonw.exe en la tarea programada)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def logging_aislado():
+    """Restaura handlers del logger raíz y sys.excepthook tras la prueba."""
+    import logging
+
+    raiz = logging.getLogger()
+    handlers, nivel, hook = list(raiz.handlers), raiz.level, sys.excepthook
+    yield
+    for h in list(raiz.handlers):
+        raiz.removeHandler(h)
+        h.close()
+    for h in handlers:
+        raiz.addHandler(h)
+    raiz.setLevel(nivel)
+    sys.excepthook = hook
+
+
+def _leer(ruta):
+    import logging
+
+    for h in logging.getLogger().handlers:
+        h.flush()
+    return Path(ruta).read_text(encoding="utf-8")
+
+
+def test_sin_consola_escribe_en_log_por_defecto(tmp_path, monkeypatch, logging_aislado):
+    from agente_impresion.agente import configurar_log, log
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(sys, "stderr", None)  # como pythonw.exe
+    archivo = configurar_log({})
+    assert archivo == str(tmp_path / "FoodOpsAgente" / "agente.log")
+    log.info("Agente iniciado: prueba ñandú")
+    assert "Agente iniciado: prueba ñandú" in _leer(archivo)
+
+
+def test_archivo_log_por_variable_de_entorno(tmp_path, logging_aislado):
+    from agente_impresion.agente import configurar_log, log
+
+    destino = tmp_path / "otra" / "carpeta" / "agente.log"
+    assert configurar_log({"FOODOPS_ARCHIVO_LOG": str(destino)}) == str(destino)
+    log.warning("aviso de prueba")
+    assert "WARNING aviso de prueba" in _leer(destino)
+
+
+def test_con_consola_y_sin_variable_no_crea_archivo(tmp_path, monkeypatch, logging_aislado):
+    import logging
+
+    from agente_impresion.agente import configurar_log
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert configurar_log({}) is None
+    assert not (tmp_path / "FoodOpsAgente").exists()
+    assert all(not isinstance(h, logging.FileHandler) for h in logging.getLogger().handlers)
+
+
+def test_error_no_controlado_queda_en_el_log(tmp_path, logging_aislado):
+    from agente_impresion.agente import configurar_log
+
+    destino = tmp_path / "agente.log"
+    configurar_log({"FOODOPS_ARCHIVO_LOG": str(destino)})
+    try:
+        raise RuntimeError("fallo simulado")
+    except RuntimeError:
+        sys.excepthook(*sys.exc_info())
+    contenido = _leer(destino)
+    assert "Error no controlado" in contenido and "RuntimeError: fallo simulado" in contenido
+
+
+def test_log_es_rotativo(tmp_path, logging_aislado):
+    import logging
+
+    from agente_impresion.agente import LOG_MAX_BYTES, LOG_RESPALDOS, configurar_log
+
+    configurar_log({"FOODOPS_ARCHIVO_LOG": str(tmp_path / "agente.log")})
+    (h,) = logging.getLogger().handlers
+    assert isinstance(h, logging.handlers.RotatingFileHandler)
+    assert h.maxBytes == LOG_MAX_BYTES and h.backupCount == LOG_RESPALDOS

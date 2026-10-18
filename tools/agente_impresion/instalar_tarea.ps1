@@ -7,10 +7,11 @@
 .DESCRIPTION
     - Tarea: "FoodOpsAgenteImpresion", disparada al iniciar sesión del
       usuario que ejecuta este script.
-    - Acción: "python -m agente_impresion" con la carpeta tools\ como
-      directorio de trabajo (se calcula a partir de la ubicación de este
-      script, no hay rutas fijas). La salida se agrega a un log en
-      %LOCALAPPDATA%\FoodOpsAgente\agente.log.
+    - Acción: "pythonw -m agente_impresion" (sin ventana) con la carpeta
+      tools\ como directorio de trabajo (se calcula a partir de la
+      ubicación de este script, no hay rutas fijas). Si no hay pythonw.exe,
+      python.exe lanzado oculto desde powershell.exe. El agente escribe su
+      propio log en %LOCALAPPDATA%\FoodOpsAgente\agente.log.
     - Reintenta cada 1 minuto hasta 999 veces si falla, sigue corriendo con
       batería y no tiene límite de tiempo de ejecución.
     - NO pide ni guarda el token. El agente lee su configuración de las
@@ -147,19 +148,47 @@ if ([int]$Matches[1] -lt 3 -or ([int]$Matches[1] -eq 3 -and [int]$Matches[2] -lt
 Write-Host "  OK  $version ($Python)"
 
 # ---------------------------------------------------------------------------
-# 5. Carpeta del log: la misma que usa el registro de impresos por defecto.
+# 5. Log del agente. Lo escribe el PROPIO agente (configurar_log en
+#    agente.py), no una redirección de cmd.exe: cmd.exe abriría una ventana
+#    de consola visible. Ruta: FOODOPS_ARCHIVO_LOG si el usuario la definió;
+#    si no, %LOCALAPPDATA%\FoodOpsAgente\agente.log (rotativo, 5 x 5 MB).
 # ---------------------------------------------------------------------------
-$CarpetaDatos = Join-Path $env:LOCALAPPDATA 'FoodOpsAgente'
-New-Item -ItemType Directory -Path $CarpetaDatos -Force | Out-Null
-$ArchivoLog = Join-Path $CarpetaDatos 'agente.log'
+$ArchivoLog = [Environment]::GetEnvironmentVariable('FOODOPS_ARCHIVO_LOG', 'User')
+if ([string]::IsNullOrWhiteSpace($ArchivoLog)) {
+    $ArchivoLog = [Environment]::GetEnvironmentVariable('FOODOPS_ARCHIVO_LOG', 'Machine')
+}
+if ([string]::IsNullOrWhiteSpace($ArchivoLog)) {
+    $ArchivoLog = Join-Path (Join-Path $env:LOCALAPPDATA 'FoodOpsAgente') 'agente.log'
+}
+New-Item -ItemType Directory -Path (Split-Path -Parent $ArchivoLog) -Force | Out-Null
 
 # ---------------------------------------------------------------------------
-# 6. Acción: cmd.exe /c para poder redirigir la salida del agente al log.
-#    Con "/c" seguido de comillas exteriores, cmd quita el primer y el último
-#    carácter de comillas y respeta las rutas con espacios del medio.
+# 6. Acción, SIN ventana visible:
+#    a) Si existe pythonw.exe junto al intérprete (lo normal en una
+#       instalación de python.org): se ejecuta directo. pythonw no abre
+#       consola y, al no tener consola, el agente escribe su log solo.
+#    b) Si no existe: python.exe lanzado desde powershell.exe con
+#       -WindowStyle Hidden (las tareas programadas no tienen opción de
+#       ventana oculta propia). Puede verse un parpadeo breve al iniciar
+#       sesión. Como python.exe sí tiene consola (oculta), se le indica el
+#       log con FOODOPS_ARCHIVO_LOG, salvo que el usuario ya la tenga.
 # ---------------------------------------------------------------------------
-$argumentos = '/c ""{0}" -m agente_impresion >> "{1}" 2>&1"' -f $Python, $ArchivoLog
-$accion = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument $argumentos -WorkingDirectory $CarpetaTrabajo
+$Pythonw = Join-Path (Split-Path -Parent $Python) 'pythonw.exe'
+if (Test-Path $Pythonw) {
+    $accion = New-ScheduledTaskAction -Execute $Pythonw -Argument '-m agente_impresion' `
+        -WorkingDirectory $CarpetaTrabajo
+    $modo = "pythonw.exe ($Pythonw)"
+} else {
+    # Comillas simples de PowerShell dentro del comando: se duplican si la
+    # ruta trae un apóstrofo.
+    $pyEsc = $Python.Replace("'", "''")
+    $logEsc = $ArchivoLog.Replace("'", "''")
+    $comando = 'if (-not $env:FOODOPS_ARCHIVO_LOG) {{ $env:FOODOPS_ARCHIVO_LOG = ''{1}'' }}; & ''{0}'' -m agente_impresion' -f $pyEsc, $logEsc
+    $argumentos = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "{0}"' -f $comando
+    $accion = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argumentos `
+        -WorkingDirectory $CarpetaTrabajo
+    $modo = "python.exe oculto vía powershell.exe ($Python); no se encontró pythonw.exe"
+}
 
 # ---------------------------------------------------------------------------
 # 7. Desencadenador: al iniciar sesión el usuario actual.
@@ -210,10 +239,15 @@ Register-ScheduledTask `
 
 Write-Host ''
 Write-Host "Tarea '$NombreTarea' instalada para $usuario." -ForegroundColor Green
+Write-Host "  Ejecución:             $modo"
 Write-Host "  Directorio de trabajo: $CarpetaTrabajo"
 Write-Host "  Log:                   $ArchivoLog"
 Write-Host ''
 Write-Host 'Arrancará sola en el próximo inicio de sesión. Para arrancarla ahora:'
 Write-Host "  Start-ScheduledTask -TaskName $NombreTarea"
-Write-Host 'Para ver su estado:'
+Write-Host 'El agente corre SIN ventana. Para saber qué hace, revise el log:'
+Write-Host "  Get-Content -Wait -Tail 20 '$ArchivoLog'"
+Write-Host 'Estado de la tarea:'
 Write-Host "  Get-ScheduledTask -TaskName $NombreTarea | Get-ScheduledTaskInfo"
+Write-Host 'Detener el agente:'
+Write-Host "  Stop-ScheduledTask -TaskName $NombreTarea"
