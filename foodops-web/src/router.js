@@ -22,6 +22,7 @@ import ReglasReabastecimientoView from '@/views/ReglasReabastecimientoView.vue'
 import PuntosVentaView from '@/views/PuntosVentaView.vue'
 import UsuariosView from '@/views/UsuariosView.vue'
 import CobrosPendientesView from '@/views/CobrosPendientesView.vue'
+import { ROLES_CONFIRMAR_COBRO } from '@/permisos.js'
 
 
 // Roles que el backend ya exige para los endpoints de cada sección. Tenerlos
@@ -30,10 +31,7 @@ import CobrosPendientesView from '@/views/CobrosPendientesView.vue'
 const ROLES_CAJA = ['resp_tienda', 'gerente_general', 'admin']
 const ROLES_GERENCIA = ['gerente_general', 'admin']
 const ROLES_CENTRAL = ['gerente_central', 'gerente_general', 'admin']
-// Mismo set que _ROLES_CONFIRMAR_COBRO en router_ordenes.py: a diferencia
-// de ROLES_CAJA (caja financiera/gastos/fondos), gerente_punto SÍ puede
-// confirmar cobros - ver docs/AUDITORIA_COBRO_EFECTIVO.md.
-const ROLES_CONFIRMAR_COBRO = ['resp_tienda', 'gerente_punto', 'gerente_general', 'admin']
+// ROLES_CONFIRMAR_COBRO vive en src/permisos.js (copia del backend).
 
 const routes = [
   { path: '/', redirect: '/dashboard' },

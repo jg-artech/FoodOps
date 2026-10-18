@@ -60,6 +60,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/store/index'
 import OrderCard from '@/components/OrderCard.vue'
 import api from '@/services/api'
+import { ROLES_CONFIRMAR_COBRO, tieneRol } from '@/permisos.js'
 
 const auth = useAuthStore()
 const ordenes = ref([])
@@ -97,10 +98,9 @@ function conteo(estado) {
 // cobros (mismo set que ROLES_CONFIRMAR_COBRO del backend) - para el resto,
 // ocultar el botón en vez de dejar que lo intente y reciba un 403 (ver
 // actualizar_estado_orden en router_ordenes.py).
-const ROLES_CONFIRMAR_COBRO = ['resp_tienda', 'gerente_punto', 'gerente_general', 'admin']
 function puedeCancelar(orden) {
   if (orden.metodo_pago !== 'efectivo' || orden.estado_cobro !== 'cobrada') return true
-  return ROLES_CONFIRMAR_COBRO.includes(auth.user?.rol)
+  return tieneRol(auth.user, ROLES_CONFIRMAR_COBRO)
 }
 
 async function fetchOrdenes() {
