@@ -243,6 +243,9 @@
       </p>
 
       <p v-else class="text-gray-500 mb-5">Total: <strong>Q{{ totalPrecio.toFixed(2) }}</strong></p>
+      <p v-if="ordenCreada?.metodo_pago === 'efectivo' && esTomadorOrden" class="text-xs text-gray-500 mb-5 -mt-3">
+        🗄️ El cajón lo abre el responsable de la tienda.
+      </p>
 
       <div class="flex flex-col gap-3">
         <button @click="imprimirTicket" :disabled="impresion.enviando" class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-4 rounded-xl text-lg flex items-center justify-center gap-2 disabled:opacity-60">
@@ -663,6 +666,9 @@ async function confirmarOrden() {
 // ya viene con la forma completa que devuelve el backend, que es lo que
 // necesita ticket.js para el fallback.
 const impresion = reactive(useImpresionTicket())
+// El tomador no abre el cajón (no está en ROLES_ABRIR_CAJON): solo se le
+// avisa quién lo hace, sin botón.
+const esTomadorOrden = computed(() => auth.user?.rol === 'tomador_orden')
 function imprimirTicket() {
   impresion.imprimir(ordenCreada.value)
 }
