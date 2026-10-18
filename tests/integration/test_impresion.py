@@ -839,3 +839,36 @@ def test_ticket_tarjeta_y_transferencia_al_cobrar(api, ctx, engine, metodo):
     r = api.post("/api/impresion/ticket", json={"orden_id": orden_id},
                  headers=_auth(ctx["tomador_agente"]))
     assert r.status_code == 201
+
+
+# ---------------------------------------------------------------------------
+# Códigos de los 409 de POST /ticket y orden de las revisiones
+# ---------------------------------------------------------------------------
+
+
+def test_ticket_sin_impresora_y_efectivo_pendiente_da_imprimir_inactiva(api, ctx, engine):
+    """Tienda sin agente: aunque la orden en efectivo siga pendiente, el
+    código es IMPRIMIR_INACTIVA, así el frontend usa window.print() como hoy."""
+    orden_id = _insertar_orden(engine, ctx["tiendas"]["sin_impresora"])  # pendiente_recibir
+    r = api.post("/api/impresion/ticket", json={"orden_id": orden_id},
+                 headers=_auth(ctx["resp_sin_impresora"]))
+    assert r.status_code == 409
+    assert r.json()["detail"]["codigo"] == "IMPRIMIR_INACTIVA"
+    assert r.json()["detail"]["mensaje"]
+
+
+def test_ticket_con_impresora_y_efectivo_pendiente_da_pendiente_recibir(api, ctx, engine):
+    orden_id = _insertar_orden(engine, ctx["tiendas"]["agente"])  # pendiente_recibir
+    r = api.post("/api/impresion/ticket", json={"orden_id": orden_id},
+                 headers=_auth(ctx["tomador_agente"]))
+    assert r.status_code == 409
+    assert r.json()["detail"]["codigo"] == "PENDIENTE_RECIBIR"
+    assert r.json()["detail"]["mensaje"]
+
+
+def test_ticket_con_impresora_y_orden_cobrada_201(api, ctx, engine):
+    orden_id = _insertar_orden(engine, ctx["tiendas"]["agente"], estado_cobro="cobrada")
+    r = api.post("/api/impresion/ticket", json={"orden_id": orden_id},
+                 headers=_auth(ctx["tomador_agente"]))
+    assert r.status_code == 201
+    assert r.json()["tipo"] == "ticket" and r.json()["estado"] == "pendiente"
