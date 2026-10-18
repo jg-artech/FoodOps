@@ -166,8 +166,12 @@ def listar_ordenes(
 ):
     """
     Listar órdenes del punto de venta del usuario autenticado.
-    Solo GERENTE_GENERAL y ADMIN pueden pasar ?punto_id= para ver otra tienda;
-    para el resto pedir otra tienda es 403 (antes se ignoraba en silencio).
+    Solo GERENTE_GENERAL y ADMIN pueden pasar ?punto_id= para ver otra tienda,
+    o quitarlo para ver todas (antes caía en silencio a la tienda propia del
+    usuario en vez de "todas" - ver AUDITORIA_MULTITIENDA.md, bug reportado
+    2026-10-18: el selector de "Todas las tiendas" del frontend nunca
+    mostraba realmente todas, solo la tienda de casa del usuario).
+    Para el resto, pedir otra tienda es 403 (antes se ignoraba en silencio).
     """
     # Este endpoint no exige rol (lo usan cocina y reparto), así que la
     # resolución general de core.auth (que trata a gerente_central como
@@ -180,13 +184,16 @@ def listar_ordenes(
 
     session = Session()
     try:
-        effective_punto_id = resolver_punto_id(session, current_user, punto_id)
-        punto = session.get(PuntoVenta, effective_punto_id)
-        ordenes = session.execute(
-            select(Orden)
-            .where(Orden.punto_id == effective_punto_id)
-            .order_by(Orden.created_at.desc())
-        ).scalars().all()
+        effective_punto_id = resolver_punto_id(session, current_user, punto_id, permitir_todas=True)
+        stmt = select(Orden).order_by(Orden.created_at.desc())
+        if effective_punto_id is not None:
+            stmt = stmt.where(Orden.punto_id == effective_punto_id)
+        ordenes = session.execute(stmt).scalars().all()
+
+        # Mapa de nombres de tienda: con "todas las tiendas" las órdenes
+        # pueden venir de cualquier punto, así que no alcanza con resolver
+        # uno solo como antes.
+        nombres_punto = {p.id: p.nombre for p in session.execute(select(PuntoVenta)).scalars()}
 
         usuario_ids = {o.tomada_por for o in ordenes if o.tomada_por}
         nombres_por_usuario = {}
@@ -204,7 +211,7 @@ def listar_ordenes(
             result.append(_orden_dict(
                 o, items,
                 tomada_por_nombre=nombres_por_usuario.get(o.tomada_por),
-                punto_nombre=punto.nombre if punto else None,
+                punto_nombre=nombres_punto.get(o.punto_id),
             ))
         return result
     finally:

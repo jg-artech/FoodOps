@@ -1,7 +1,7 @@
 <template>
   <div class="max-w-4xl mx-auto px-4 py-8">
-    <div v-if="isOffline" class="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 text-sm text-yellow-700">
-      Sin conexión — mostrando datos guardados localmente.
+    <div v-if="mostrandoCache" class="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 text-sm text-yellow-700">
+      {{ isOffline ? 'Sin conexión' : 'No se pudo actualizar' }} — mostrando datos guardados localmente.
     </div>
 
     <div class="flex items-center justify-between mb-6">
@@ -43,14 +43,13 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/store/index'
 import OrdenList from '@/components/OrdenList.vue'
-import api from '@/services/api'
-
-const CACHE_KEY = 'foodops_ordenes'
+import { fetchOrdenesConCache } from '@/utils/ordenes.js'
 
 const auth = useAuthStore()
 const ordenes = ref([])
 const loading = ref(false)
 const isOffline = ref(!navigator.onLine)
+const mostrandoCache = ref(false)
 
 const ordenesActivas = computed(() =>
   ordenes.value.filter(o => ['pendiente', 'preparando'].includes(o.estado)).length
@@ -61,16 +60,10 @@ const totalVentas = computed(() =>
 
 async function fetchOrdenes() {
   loading.value = true
-  try {
-    const { data } = await api.get('/api/ordenes/')
-    ordenes.value = data
-    localStorage.setItem(CACHE_KEY, JSON.stringify(data))
-  } catch {
-    const cached = localStorage.getItem(CACHE_KEY)
-    if (cached) ordenes.value = JSON.parse(cached)
-  } finally {
-    loading.value = false
-  }
+  const { ordenes: data, deCache } = await fetchOrdenesConCache()
+  ordenes.value = data
+  mostrandoCache.value = deCache
+  loading.value = false
 }
 
 onMounted(() => {
