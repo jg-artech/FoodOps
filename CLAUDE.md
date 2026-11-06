@@ -48,8 +48,28 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Las pruebas del agente de Windows no se pueden ejecutar desde este entorno. Indícalo en vez de simular el resultado.
 
 ## Estado al cierre de la última sesión
-- Cobro en efectivo: desplegado en producción y verificado.
-- Impresión (backend y frontend): desplegada en producción. Las tres tiendas siguen con impresora_activa = false y cajon_activo = false.
-- Local Centro: agente instalado en la PC de la tienda. Pendiente: verificar la tarea programada (reintento y reinicio), activar la impresora por SQL y probar desde un móvil Android.
-- Pendiente de decisión: code page de la impresora. Se resuelve con tools/agente_impresion/prueba_impresora.py.
-- Pendiente de push: cinco commits locales, el último es 0be9569.
+
+**Producción**
+- Backend y frontend de impresión desplegados. Commit en producción: 755d717.
+- Cobro en efectivo verificado: el vendedor registra, el responsable confirma, el cuadre cuenta solo COBRADA.
+- Rotación de secretos completada: contraseña de la base, SECRET_KEY, JWT_SECRET y contraseña de admin. Los vendedores deben volver a iniciar sesión.
+- Usuarios activos: admin (ADMIN, sin tienda, solo administración), vendedor1 (TOMADOR_ORDEN, Local Centro), alejandro (GERENTE_CENTRAL, sin tienda, sin POS), central_test (desactivado).
+- Local Centro: vendedor y responsable creados; flujo de venta en efectivo probado de punta a punta.
+- Impresora y cajón de Centro: pendientes de activar por SQL tras la prueba física (ver docs/RUNBOOK_ACTIVAR_CENTRO.md). Jordán y Auxiliar siguen desactivadas.
+
+**Seguridad pendiente**
+- El historial de Git fue reescrito (los secretos ya no están en main). Quedan pendientes: solicitud a GitHub Support para purgar los SHA 0c5d690, 64d095e y 0c08f58; revisar alertas de Secret Scanning; revisar forks.
+- Hay respaldos con valores viejos en el servidor (/root/). Borrarlos cuando la producción esté estable varios días.
+
+**Reglas aprendidas hoy (obligatorias)**
+- Nunca editar .env.production con sed ni reemplazos de texto. Para secretos, usar un script en Python que valide el formato de DATABASE_URL y DATABASE_SYNC_URL (postgresql://usuario:clave@db:5432/foodops_db) antes de escribir, y que pruebe la conexión por TCP desde la red de Docker antes de recrear api.
+- Una conexión psql por socket local dentro del contenedor no valida la contraseña (pg_hba usa trust para local). Validar siempre por TCP desde la red de Docker.
+- Un bloqueo por intentos fallidos aparece en la tabla usuarios (intentos_fallidos, bloqueado_hasta). Revisarlo antes de suponer que la contraseña está mal.
+- Un usuario de rol multitienda sin punto_id no puede operar POS. Los vendedores deben tener punto_id; admin no se usa para vender.
+- El formato de .env.production y las URLs se verifican antes de reiniciar cualquier servicio.
+
+**Pendiente de decisión**
+- Si admin debe poder vender (requiere selector de tienda en el POS) o solo administrar (recomendado).
+- Confirmar el rol de alejandro.
+- Code page de la impresora AON PR-350WF (prueba_impresora.py, pendiente de resultado en Centro).
+- Responsables y vendedores de Jordán y Auxiliar.
