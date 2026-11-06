@@ -58,7 +58,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Impresora y cajón de Centro: pendientes de activar por SQL tras la prueba física (ver docs/RUNBOOK_ACTIVAR_CENTRO.md). Jordán y Auxiliar siguen desactivadas.
 
 **Seguridad pendiente**
-- El historial de Git fue reescrito (los secretos ya no están en main). Quedan pendientes: solicitud a GitHub Support para purgar los SHA 0c5d690, 64d095e y 0c08f58; revisar alertas de Secret Scanning; revisar forks.
+- El historial de Git fue reescrito (los secretos ya no están en main). Quedan pendientes: solicitud a GitHub Support para purgar los commits anteriores a 755d717; revisar alertas de Secret Scanning; revisar forks.
 - Hay respaldos con valores viejos en el servidor (/root/). Borrarlos cuando la producción esté estable varios días.
 
 **Reglas aprendidas hoy (obligatorias)**
