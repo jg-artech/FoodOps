@@ -289,3 +289,34 @@ class TokenAgente(Base):
             postgresql_where=text("activo = true"),
         ),
     )
+
+
+class DatosFacturacion(Base):
+    """Datos fiscales capturados al cobrar (migración 013). Fase 1: solo se
+    guardan; no se emite factura ni se guarda su número. Una orden sin fila
+    equivale a requiere_factura = false."""
+
+    __tablename__ = "datos_facturacion"
+
+    id = Column(Integer, primary_key=True)
+    orden_id = Column(Integer, ForeignKey("ordenes.id", ondelete="RESTRICT"), nullable=False)
+    requiere_factura = Column(Boolean, nullable=False, default=False, server_default="false")
+    nit = Column(String(20), nullable=True)
+    nombre_fiscal = Column(String(200), nullable=True)
+    direccion_fiscal = Column(String(255), nullable=True)
+    factura_generada = Column(Boolean, nullable=False, default=False, server_default="false")
+    factura_generada_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    factura_generada_at = Column(DateTime, nullable=True)
+    capturado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    capturado_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    actualizado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    actualizado_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("orden_id", name="uq_datos_facturacion_orden"),
+        CheckConstraint(
+            "NOT factura_generada OR (requiere_factura "
+            "AND factura_generada_por IS NOT NULL AND factura_generada_at IS NOT NULL)",
+            name="ck_datos_facturacion_generada",
+        ),
+    )
