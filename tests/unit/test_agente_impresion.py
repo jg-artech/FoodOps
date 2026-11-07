@@ -131,6 +131,24 @@ def test_ticket_muestra_el_cliente_en_negrita_debajo_de_la_orden(es_domicilio):
     assert resto.index(escpos.TAMANO_NORMAL) < resto.index("Tipo:".encode("cp850"))
 
 
+def test_ticket_cargo_de_entrega_sin_cantidad():
+    items = ORDEN["items"] + [{"producto": "Cargo de entrega", "cantidad": 1,
+                               "precio_unitario": 25.5, "tipo": "entrega"}]
+    texto = escpos.ticket({"orden": {**ORDEN, "items": items}}).decode("cp850")
+    linea = next(l for l in texto.split("\n") if "Cargo de entrega" in l)
+    assert not linea.lstrip().startswith("1x")
+    assert "1x Cargo" not in texto
+    assert "Q25.50" in linea
+    # Los productos siguen con su cantidad.
+    assert "1x 1/4 Pollo" in texto
+
+
+def test_ticket_item_sin_tipo_sigue_con_cantidad():
+    """Payload de un backend anterior a la migración 014 (sin "tipo")."""
+    texto = escpos.ticket({"orden": ORDEN}).decode("cp850")
+    assert "1x 1/4 Pollo" in texto
+
+
 def test_ticket_para_llevar_no_muestra_datos_de_domicilio():
     texto = escpos.ticket({"orden": {**ORDEN, "es_domicilio": False}}).decode("cp850")
     assert "Para llevar" in texto

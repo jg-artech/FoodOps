@@ -113,8 +113,12 @@ def ticket(payload: dict, ancho: int = 42, nombre_negocio: str = "Asados a la Le
             subtotal = float(i.get("cantidad") or 0) * float(i.get("precio_unitario") or 0)
         except (TypeError, ValueError):
             subtotal = 0
-        out += [_linea(t) for t in _fila(f"{i.get('cantidad')}x {i.get('producto')}",
-                                         _q(subtotal), ancho)]
+        # El cargo de entrega va sin "1x": no es un producto.
+        if i.get("tipo") == "entrega":
+            etiqueta = str(i.get("producto") or "Cargo de entrega")
+        else:
+            etiqueta = f"{i.get('cantidad')}x {i.get('producto')}"
+        out += [_linea(t) for t in _fila(etiqueta, _q(subtotal), ancho)]
         if i.get("especiales"):
             out += [_linea("  > " + t) for t in _partir(i["especiales"], ancho - 4)]
     out += [sep]
