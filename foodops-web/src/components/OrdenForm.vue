@@ -2,8 +2,8 @@
   <form @submit.prevent="handleSubmit" class="space-y-5">
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
-        <input v-model="form.cliente_nombre" type="text" placeholder="Nombre del cliente"
+        <label class="block text-sm font-medium text-gray-700 mb-1">Cliente *</label>
+        <input v-model="form.cliente_nombre" type="text" placeholder="Nombre del cliente" autocomplete="off"
           class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-400" />
       </div>
       <div>
@@ -51,6 +51,7 @@
       <p v-if="form.items.length === 0" class="text-sm text-gray-400">Agrega al menos un item.</p>
     </div>
 
+    <p v-if="errorNombre && form.cliente_nombre" class="text-red-500 text-sm">{{ errorNombre }}</p>
     <p v-if="error" class="text-red-500 text-sm">{{ error }}</p>
     <p v-if="success" class="text-green-600 text-sm font-medium">{{ success }}</p>
 
@@ -59,7 +60,7 @@
         class="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
         Cancelar
       </button>
-      <button type="submit" :disabled="loading || form.items.length === 0"
+      <button type="submit" :disabled="loading || form.items.length === 0 || !!errorNombre"
         class="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg text-sm transition disabled:opacity-50">
         {{ loading ? 'Guardando...' : 'Crear Orden' }}
       </button>
@@ -68,8 +69,10 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { computed, ref, reactive } from 'vue'
 import api from '@/services/api'
+import { normalizarError } from '@/services/impresion.js'
+import { errorNombreCliente, limpiarNombre } from '@/utils/factura.js'
 
 const emit = defineEmits(['created', 'cancel'])
 
@@ -85,6 +88,10 @@ const form = reactive({
   items: [],
 })
 
+// Nombre obligatorio al cobrar, igual que en el POS (la regla real está en
+// el backend). El botón queda deshabilitado mientras no sirva.
+const errorNombre = computed(() => errorNombreCliente(form.cliente_nombre))
+
 function addItem() {
   form.items.push({ producto: '', cantidad: 1, precio_unitario: 0, especiales: '' })
 }
@@ -94,6 +101,7 @@ function removeItem(i) {
 }
 
 async function handleSubmit() {
+  if (errorNombre.value) { error.value = errorNombre.value; return }
   if (!form.metodo_pago) { error.value = 'Selecciona un método de pago.'; return }
   if (form.items.length === 0) { error.value = 'Agrega al menos un item.'; return }
 
@@ -103,7 +111,7 @@ async function handleSubmit() {
 
   try {
     const payload = {
-      cliente_nombre: form.cliente_nombre || null,
+      cliente_nombre: limpiarNombre(form.cliente_nombre),
       cliente_telefono: form.cliente_telefono || null,
       metodo_pago: form.metodo_pago,
       es_domicilio: form.es_domicilio,
@@ -119,7 +127,7 @@ async function handleSubmit() {
     Object.assign(form, { cliente_nombre: '', cliente_telefono: '', metodo_pago: '', es_domicilio: false, items: [] })
     emit('created', data)
   } catch (e) {
-    error.value = e.response?.data?.detail || 'Error al crear la orden.'
+    error.value = e.response ? normalizarError(e).mensaje : 'Error al crear la orden.'
   } finally {
     loading.value = false
   }

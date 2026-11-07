@@ -37,8 +37,9 @@ function buildTicketHtml(orden) {
     </div>
     ${i.especiales ? `<div class="muted item-especiales">↳ ${escapeHtml(i.especiales)}</div>` : ''}`).join('')
 
+  // El nombre va siempre, aparte (ver "Cliente:" debajo de Orden): aquí
+  // solo los datos de entrega a domicilio.
   const bloqueCliente = orden?.es_domicilio ? `
-    <div class="row"><span>Cliente:</span><span>${escapeHtml(orden.cliente_nombre)}</span></div>
     <div class="row"><span>Tel:</span><span>${escapeHtml(orden.cliente_telefono)}</span></div>
     <div class="muted">${escapeHtml(orden.cliente_direccion)}</div>` : ''
 
@@ -85,6 +86,7 @@ function buildTicketHtml(orden) {
   <div class="center muted">${formatFechaTicket(orden?.created_at)}</div>
   <hr>
   <div class="row"><span>Orden:</span><span class="bold">${escapeHtml(orden?.numero_orden)}</span></div>
+  <div class="row bold big"><span>Cliente:</span><span class="item-name" style="text-align:right;padding:0 0 0 4px">${escapeHtml(orden?.cliente_nombre || '')}</span></div>
   <div class="row"><span>Tipo:</span><span>${orden?.es_domicilio ? 'Domicilio' : 'Para llevar'}</span></div>
   ${bloqueCliente}
   <div class="row"><span>Atendió:</span><span>${escapeHtml(orden?.tomada_por_nombre || '')}</span></div>

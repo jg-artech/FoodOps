@@ -159,6 +159,15 @@
       <h2 class="text-xl font-bold text-gray-800 mb-2">¿Cómo paga?</h2>
       <p class="text-2xl font-black text-orange-500 mb-5">Total: {{ formatQ(totalPrecio) }}</p>
 
+      <!-- Nombre obligatorio: el personal llama al cliente con él al entregar -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Nombre del cliente *</label>
+        <input v-model="form.cliente_nombre" type="text" placeholder="Juan Pérez" autocomplete="off"
+          :maxlength="CLIENTE_NOMBRE_MAX + 20"
+          class="w-full border rounded-xl px-3 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
+          :class="errorNombre ? 'border-red-300' : 'border-gray-300'" />
+      </div>
+
       <div class="space-y-3 mb-4">
         <button v-for="m in metodos" :key="m.value" @click="form.metodo_pago = m.value; form.dinero_recibido = ''"
           class="w-full p-5 border-2 rounded-2xl flex items-center gap-4 transition-all"
@@ -203,6 +212,10 @@
         </div>
       </transition>
 
+      <DatosFacturaCampos :datos="factura" class="mb-4" />
+
+      <!-- Por qué el botón está deshabilitado, en el mismo patrón de errores -->
+      <p v-if="avisoCobro" class="text-red-500 text-sm mb-3">{{ avisoCobro }}</p>
       <p v-if="errorMsg" class="text-red-500 text-sm mb-3">{{ errorMsg }}</p>
 
       <div class="flex gap-3">
@@ -220,7 +233,15 @@
     <div v-if="step === 5" class="text-center py-8">
       <div class="text-6xl mb-4">✅</div>
       <h2 class="text-2xl font-bold text-gray-800 mb-1">¡Orden creada!</h2>
-      <p class="text-3xl font-bold text-orange-500 mb-3">{{ ordenCreada?.numero_orden }}</p>
+      <p class="text-3xl font-bold text-orange-500 mb-1">{{ ordenCreada?.numero_orden }}</p>
+      <p class="text-xl font-semibold text-gray-700 mb-3">👤 {{ ordenCreada?.cliente_nombre }}</p>
+      <p v-if="ordenCreada?.datos_factura?.requiere_factura" class="text-sm text-amber-700 mb-3">
+        🧾 Factura pendiente de generar (NIT {{ ordenCreada.datos_factura.nit }})
+      </p>
+      <p v-if="errorFacturaGuardada" class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-4">
+        ⚠ La orden se creó, pero no se guardaron los datos de factura: {{ errorFacturaGuardada }}.
+        Pide al responsable que los capture desde la lista de órdenes.
+      </p>
 
       <!-- Resumen de efectivo si aplica -->
       <div v-if="ordenCreada?.metodo_pago === 'efectivo' && ordenCreada?.dinero_recibido"
@@ -297,6 +318,16 @@ import SelectorComponentesModal from '@/components/SelectorComponentesModal.vue'
 import api from '@/services/api'
 import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
 import { useImpresionTicket } from '@/utils/impresionTicket.js'
+import DatosFacturaCampos from '@/components/DatosFacturaCampos.vue'
+import { normalizarError } from '@/services/impresion.js'
+import {
+  CLIENTE_NOMBRE_MAX,
+  bodyDatosFactura,
+  datosFacturaVacios,
+  errorDatosFactura,
+  errorNombreCliente,
+  limpiarNombre,
+} from '@/utils/factura.js'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -321,6 +352,11 @@ const step = ref(1)
 const loading = ref(false)
 const errorMsg = ref('')
 const ordenCreada = ref(null)
+// Si la orden se creó pero el PUT de datos de factura falló: la venta no
+// se deshace, solo se avisa.
+const errorFacturaGuardada = ref('')
+// Interruptor "¿Requiere factura?" (apagado por defecto) y sus campos.
+const factura = reactive(datosFacturaVacios())
 
 const menuItems = getMenu()
 const categorias = getCategorias()
@@ -342,8 +378,14 @@ const vuelto = computed(() => {
   return Number(form.dinero_recibido) - totalPrecio.value
 })
 
+const errorNombre = computed(() => errorNombreCliente(form.cliente_nombre))
+const errorFactura = computed(() => errorDatosFactura(factura))
+// Primer motivo por el que no se puede confirmar (nombre, luego factura).
+const avisoCobro = computed(() => errorNombre.value || errorFactura.value)
+
 const canConfirmar = computed(() => {
   if (!form.metodo_pago) return false
+  if (avisoCobro.value) return false
   if (form.metodo_pago === 'efectivo' && form.dinero_recibido) {
     return Number(form.dinero_recibido) >= totalPrecio.value
   }
@@ -417,7 +459,7 @@ const metodos = [
 
 const canStep1 = computed(() => {
   if (!form.tipo) return false
-  if (form.tipo === 'domicilio') return form.cliente_nombre && form.cliente_telefono && form.cliente_direccion
+  if (form.tipo === 'domicilio') return !errorNombre.value && form.cliente_telefono && form.cliente_direccion
   return true
 })
 
@@ -595,7 +637,7 @@ async function confirmarOrden() {
     const vueltoCalc = dineroRecibido !== null ? dineroRecibido - totalPrecio.value : null
 
     const payload = {
-      cliente_nombre:    form.tipo === 'domicilio' ? form.cliente_nombre : null,
+      cliente_nombre:    limpiarNombre(form.cliente_nombre),
       cliente_telefono:  form.tipo === 'domicilio' ? form.cliente_telefono : null,
       cliente_direccion: form.tipo === 'domicilio' ? form.cliente_direccion : null,
       metodo_pago:       form.metodo_pago,
@@ -612,6 +654,19 @@ async function confirmarOrden() {
     }
     const { data } = await api.post('/api/ordenes/', payload)
     ordenCreada.value = data
+
+    // Datos de factura: solo si se pidió. Va después de crear la orden y un
+    // fallo no la deshace (la venta no depende de esto); el responsable
+    // puede capturarlos después.
+    errorFacturaGuardada.value = ''
+    if (factura.requiere_factura) {
+      try {
+        const { data: df } = await api.put(`/api/ordenes/${data.id}/datos-factura`, bodyDatosFactura(factura))
+        ordenCreada.value = { ...data, datos_factura: df }
+      } catch (e) {
+        errorFacturaGuardada.value = normalizarError(e).mensaje
+      }
+    }
 
     // Registrar transacción financiera con costo correcto por tipo
     const config = getCostosConfig()
@@ -641,7 +696,7 @@ async function confirmarOrden() {
     api.post('/api/ordenes/transacciones/', {
       orden_id:                  data.id,
       tipo_venta:                'individual',
-      cliente_nombre:            form.tipo === 'domicilio' ? form.cliente_nombre : null,
+      cliente_nombre:            limpiarNombre(form.cliente_nombre),
       cliente_telefono:          form.tipo === 'domicilio' ? form.cliente_telefono : null,
       cliente_direccion:         form.tipo === 'domicilio' ? form.cliente_direccion : null,
       tipo_cliente:              form.tipo === 'domicilio' ? 'domicilio' : 'para_llevar',
@@ -656,7 +711,7 @@ async function confirmarOrden() {
 
     step.value = 5
   } catch (e) {
-    errorMsg.value = e.response?.data?.detail || 'Error al crear la orden'
+    errorMsg.value = e.response ? normalizarError(e).mensaje : 'Error al crear la orden'
   } finally {
     loading.value = false
   }
@@ -678,8 +733,10 @@ function resetOrden() {
   step.value = 1
   cart.value = []
   Object.assign(form, { tipo: '', cliente_nombre: '', cliente_telefono: '', cliente_direccion: '', metodo_pago: '', notas_especiales: '', dinero_recibido: '' })
+  Object.assign(factura, datosFacturaVacios())
   ordenCreada.value = null
   errorMsg.value = ''
+  errorFacturaGuardada.value = ''
   impresion.limpiar()
 }
 </script>
