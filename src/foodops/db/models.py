@@ -1,9 +1,10 @@
 """Modelos SQLAlchemy para BD"""
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, CheckConstraint, ForeignKey, Enum, Text, JSON, BigInteger, TIMESTAMP, UniqueConstraint, Index, text
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, CheckConstraint, ForeignKey, Enum, Text, JSON, BigInteger, TIMESTAMP, UniqueConstraint, Index, Numeric, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
+from decimal import Decimal
 import enum
 
 Base = declarative_base()
@@ -49,6 +50,10 @@ class Empresa(Base):
     puntos = relationship("PuntoVenta", back_populates="empresa")
     usuarios = relationship("Usuario", back_populates="empresa")
 
+# Tope del cargo de entrega si la tienda no tiene otro (migración 014).
+TOPE_CARGO_ENTREGA_DEFAULT = Decimal("200.00")
+
+
 class PuntoVenta(Base):
     __tablename__ = "puntos_venta"
     
@@ -67,6 +72,15 @@ class PuntoVenta(Base):
     impresora_activa = Column(Boolean, nullable=False, default=False, server_default="false")
     # Si es False, nunca se generan trabajos ABRIR_CAJON para esta tienda.
     cajon_activo = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Cargo de entrega máximo sin autorización de un responsable (migración
+    # 014). Lo cambia solo admin/gerente_general (PATCH /api/puntos-venta).
+    tope_cargo_entrega = Column(
+        Numeric(10, 2), nullable=False, default=TOPE_CARGO_ENTREGA_DEFAULT, server_default=text("200.00")
+    )
+
+    __table_args__ = (
+        CheckConstraint("tope_cargo_entrega >= 0", name="ck_puntos_venta_tope_cargo_entrega"),
+    )
     
     empresa = relationship("Empresa", back_populates="puntos")
     usuarios = relationship("Usuario", back_populates="punto")
@@ -146,6 +160,11 @@ class Orden(Base):
         UniqueConstraint("punto_id", "numero_orden", name="uq_ordenes_punto_numero"),
     )
 
+ITEM_TIPO_PRODUCTO = "producto"
+ITEM_TIPO_ENTREGA = "entrega"
+NOMBRE_CARGO_ENTREGA = "Cargo de entrega"
+
+
 class OrdenItem(Base):
     __tablename__ = "orden_items"
 
@@ -156,8 +175,21 @@ class OrdenItem(Base):
     precio_unitario = Column(Float, nullable=False)
     subtotal = Column(Float, nullable=False)
     especiales = Column(Text)
+    # 'producto' | 'entrega' (migración 014). El cargo de entrega es una línea
+    # más que suma al total; a lo sumo una por orden.
+    tipo = Column(String(20), nullable=False, default=ITEM_TIPO_PRODUCTO, server_default=ITEM_TIPO_PRODUCTO)
 
     orden = relationship("Orden", back_populates="items")
+
+    __table_args__ = (
+        CheckConstraint("tipo IN ('producto', 'entrega')", name="ck_orden_items_tipo"),
+        Index(
+            "ux_orden_items_entrega_por_orden",
+            "orden_id",
+            unique=True,
+            postgresql_where=text("tipo = 'entrega'"),
+        ),
+    )
 
 
 class TipoVenta(str, enum.Enum):
@@ -320,3 +352,18 @@ class DatosFacturacion(Base):
             name="ck_datos_facturacion_generada",
         ),
     )
+
+
+class AutorizacionCargoUsada(Base):
+    """Token de autorización de cargo de entrega ya usado (migración 014).
+    La PK sobre jti es la que garantiza el uso único."""
+
+    __tablename__ = "autorizaciones_cargo_usadas"
+
+    jti = Column(String(64), primary_key=True)
+    orden_id = Column(Integer, ForeignKey("ordenes.id"), nullable=False)
+    punto_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=False)
+    autorizado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    usado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    monto = Column(Numeric(10, 2), nullable=False)
+    usado_at = Column(DateTime, nullable=False, default=datetime.utcnow)
