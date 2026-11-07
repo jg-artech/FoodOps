@@ -406,9 +406,10 @@ def listar_ordenes(
 # cualquier rol de operación (también cocinero, repartidor y vendedor)
 # cancele una orden sin motivo ni contraseña, incluidas las cobradas con
 # tarjeta o transferencia, y tampoco impide reactivar una orden cancelada.
-# La cancelación desde cocina con motivo y contraseña es
-# POST /{orden_id}/cancelar-cocina (más abajo); el POS (/pos/ordenes) sigue
-# usando este endpoint.
+# Las pantallas ya no cancelan por aquí: cocina usa
+# POST /{orden_id}/cancelar-cocina y Órdenes (POS) usa POST /{orden_id}/cancelar,
+# los dos con motivo y contraseña. Falta cerrar la cancelación en este
+# endpoint (opción B del TODO de órdenes cobradas).
 @router.put("/{orden_id}/status")
 def actualizar_estado_orden(
     orden_id: int,
@@ -488,23 +489,22 @@ def _errores_sin_input(exc: ValidationError) -> list:
     ]
 
 
-@router.post("/{orden_id}/cancelar-cocina")
-def cancelar_desde_cocina(
-    orden_id: int,
-    body: object = Body(None),
-    current_user: TokenData = Depends(requiere_rol(*_ROLES_CANCELAR_COCINA)),
-):
-    """Cancela una orden desde cocina con motivo y la contraseña personal de
-    quien cancela. Orden de validaciones: rol (403, en la dependencia) ->
-    motivo y cuerpo (422) -> orden existe (404) -> tienda (403) -> ya
-    cancelada (409) -> cobrada (409) -> bloqueo o contraseña (401, mismo
+_ORIGEN_COCINA = "cocina"
+_ORIGEN_POS = "pos"
+
+
+def _cancelar_orden(orden_id: int, body, current_user: TokenData, *, origen: str) -> dict:
+    """Cancelación con motivo y contraseña personal de quien cancela (el rol
+    lo exige la dependencia del endpoint). Orden de validaciones: motivo y
+    cuerpo (422) -> orden existe (404) -> tienda (403) -> ya cancelada (409)
+    -> cobrada, solo en cocina (409) -> bloqueo o contraseña (401, mismo
     mensaje) -> cancelar.
 
     Una orden cancelada no se reactiva por aquí (no hay endpoint para eso).
     La contraseña nunca se guarda: ni en auditoría, ni en logs, ni en los
     mensajes de error.
     """
-    # body: object y validación a mano para responder el 422 sin "input".
+    # body sin modelo en la firma y validación a mano: el 422 sale sin "input".
     try:
         datos = CancelarCocinaRequest.model_validate(body if isinstance(body, dict) else {})
     except ValidationError as exc:
@@ -518,16 +518,13 @@ def cancelar_desde_cocina(
         exigir_acceso_a_punto(current_user, orden.punto_id)
         if orden.estado == OrdenEstado.CANCELADO:
             raise HTTPException(status_code=409, detail="La orden ya está cancelada")
-        if orden.estado_cobro == ESTADO_COBRO_COBRADA:
-            # TODO: Cancelación de órdenes cobradas (tarjeta, transferencia o
-            # efectivo) pendiente de decisión: opción A permitir con motivo y
-            # contraseña y dejar la devolución como pendiente; opción B cerrar
-            # PUT /status y definir devolución antes.
+        cobrada = orden.estado_cobro == ESTADO_COBRO_COBRADA
+        if cobrada and origen == _ORIGEN_COCINA:
             raise HTTPException(
                 status_code=409,
                 detail=(
                     "Esta orden ya fue cobrada y no se puede cancelar desde cocina; "
-                    "la corrige administración"
+                    "cancélala desde Órdenes (POS) con el motivo"
                 ),
             )
 
@@ -540,13 +537,14 @@ def cancelar_desde_cocina(
             # aunque la cancelación se rechace.
             registrar_auditoria(
                 session,
-                accion="CANCELACION_COCINA_RECHAZADA",
+                accion="CANCELACION_COCINA_RECHAZADA" if origen == _ORIGEN_COCINA else "CANCELACION_ORDEN_RECHAZADA",
                 entidad="orden",
                 entidad_id=orden.id,
                 usuario_id=current_user.user_id,
                 punto_id=orden.punto_id,
                 detalle={
                     "numero_orden": orden.numero_orden,
+                    "origen": origen,
                     "motivo_rechazo": resultado,
                     "intentos": usuario.intentos_fallidos if usuario else None,
                 },
@@ -564,32 +562,78 @@ def cancelar_desde_cocina(
         # TODO: órdenes activas antiguas (p. ej. pendientes de hace semanas):
         # falta decidir qué hacer con ellas. Este endpoint no las cancela en
         # bloque ni cambia su estado.
+        detalle = {
+            "orden_id": orden.id,
+            "numero_orden": orden.numero_orden,
+            "origen": origen,
+            "estado_previo": estado_previo,
+            "estado_cobro_previo": estado_cobro_previo,
+            "motivo": datos.motivo,
+            "cancelada_at": cancelada_at.isoformat(),
+        }
+        if cobrada:
+            # TODO(devolución): el flujo de devolución al cliente está
+            # pendiente de definir. Mientras tanto queda registrado aquí qué
+            # se cobró y que la devolución está pendiente. Una orden en
+            # efectivo cancelada deja de contar en el cuadre (solo cuenta
+            # COBRADA y no cancelada): el dinero sale de caja al devolverlo.
+            detalle.update({
+                "monto_cobrado": float(orden.total),
+                "metodo_pago": orden.metodo_pago.value if orden.metodo_pago else None,
+                "devolucion_pendiente": True,
+            })
         registrar_auditoria(
             session,
-            accion="ORDEN_CANCELADA_DESDE_COCINA",
+            accion="ORDEN_CANCELADA_DESDE_COCINA" if origen == _ORIGEN_COCINA else "ORDEN_CANCELADA",
             entidad="orden",
             entidad_id=orden.id,
             usuario_id=current_user.user_id,
             punto_id=orden.punto_id,
-            detalle={
-                "orden_id": orden.id,
-                "numero_orden": orden.numero_orden,
-                "estado_previo": estado_previo,
-                "estado_cobro_previo": estado_cobro_previo,
-                "motivo": datos.motivo,
-                "cancelada_at": cancelada_at.isoformat(),
-            },
+            detalle=detalle,
         )
         session.commit()
-        return {"id": orden.id, "numero_orden": orden.numero_orden, "estado": orden.estado.value}
+        return {
+            "id": orden.id,
+            "numero_orden": orden.numero_orden,
+            "estado": orden.estado.value,
+            "devolucion_pendiente": cobrada,
+        }
     except HTTPException:
         raise
     except Exception:
         session.rollback()
-        logger.exception("Error inesperado en cancelar-cocina (orden %s)", orden_id)
+        logger.exception("Error inesperado al cancelar la orden %s (%s)", orden_id, origen)
         raise HTTPException(status_code=500, detail="Error interno del servidor")
     finally:
         session.close()
+
+
+@router.post("/{orden_id}/cancelar-cocina")
+def cancelar_desde_cocina(
+    orden_id: int,
+    body: object = Body(None),
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_CANCELAR_COCINA)),
+):
+    """Cancelar desde cocina: motivo y contraseña personal. No cancela
+    órdenes cobradas (409); esas se cancelan desde el POS."""
+    return _cancelar_orden(orden_id, body, current_user, origen=_ORIGEN_COCINA)
+
+
+@router.post("/{orden_id}/cancelar")
+def cancelar_orden(
+    orden_id: int,
+    body: object = Body(None),
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_CANCELAR_COCINA)),
+):
+    """Cancelar desde Órdenes (POS): motivo y contraseña personal, mismos
+    roles que cocina. Sí cancela órdenes cobradas: la auditoría registra el
+    monto, el método y que la devolución queda pendiente.
+
+    Decisión (2026-11-07): quien puede cancelar da siempre el motivo, y con
+    más razón si la orden ya fue pagada. Esto resuelve, para el POS, la
+    opción A del TODO de órdenes cobradas; cocina sigue sin cancelarlas.
+    """
+    return _cancelar_orden(orden_id, body, current_user, origen=_ORIGEN_POS)
 
 
 def _concepto_cobro(session, orden: Orden) -> dict:
