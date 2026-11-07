@@ -40,10 +40,20 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+// Única excepción al cierre de sesión por 401: en cancelar-cocina el 401
+// significa "la contraseña que escribiste para confirmar es incorrecta", no
+// que la sesión venció. Si la sesión sí venció, la siguiente consulta de la
+// cocina (cada 2 s) recibe su propio 401 y cierra la sesión igual.
+const CANCELAR_COCINA = /^\/api\/ordenes\/\d+\/cancelar-cocina$/
+
+function esCancelarCocina(config) {
+  return (config?.method || '').toLowerCase() === 'post' && CANCELAR_COCINA.test(config?.url || '')
+}
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !esCancelarCocina(error.config)) {
       localStorage.removeItem('token')
       window.location.href = '/login'
     }

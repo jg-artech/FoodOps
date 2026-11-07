@@ -26,6 +26,9 @@ export const ROLES_CONFIRMAR_COBRO = [
   'resp_tienda', 'gerente_punto', 'gerente_general', 'admin',
 ]
 
+// router_ordenes.py: _ROLES_CANCELAR_COCINA (los mismos que confirman cobros).
+export const ROLES_CANCELAR_COCINA = ROLES_CONFIRMAR_COBRO
+
 // ¿El rol de la sesión actual está en la lista?
 export function tieneRol(usuario, roles) {
   return !!usuario?.rol && roles.includes(usuario.rol)

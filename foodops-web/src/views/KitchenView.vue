@@ -38,20 +38,28 @@
           :key="orden.id"
           :orden="orden"
           :recetas="recetas"
+          :puede-cancelar="puedeCancelar"
           @cambiar="cambiarEstado"
+          @cancelar="ordenACancelar = $event"
         />
       </div>
     </div>
+
+    <CancelarOrdenCocinaModal v-if="ordenACancelar" :orden="ordenACancelar"
+      @cerrar="ordenACancelar = null" @cancelada="quitarOrden" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/store/index'
+import { ROLES_CANCELAR_COCINA, tieneRol } from '@/permisos.js'
+import CancelarOrdenCocinaModal from '@/components/CancelarOrdenCocinaModal.vue'
 import KitchenTicket from '@/components/KitchenTicket.vue'
 import api from '@/services/api'
 
 const auth = useAuthStore()
+const puedeCancelar = computed(() => tieneRol(auth.user, ROLES_CANCELAR_COCINA))
 const ordenes = ref([])
 const conectado = ref(true)
 const horaActual = ref('')
@@ -110,12 +118,19 @@ async function fetchOrdenes() {
   }
 }
 
+// Cancelar desde cocina: modal con motivo y contraseña personal
+// (POST /api/ordenes/{id}/cancelar-cocina). Ya no pasa por PUT /status.
+const ordenACancelar = ref(null)
+function quitarOrden(orden) {
+  ordenes.value = ordenes.value.filter(o => o.id !== orden.id)
+  prevIds.delete(orden.id)
+  ordenACancelar.value = null
+}
+
 async function cambiarEstado(orden, nuevoEstado) {
-  if (nuevoEstado === 'cancelado' && !confirm(`¿Cancelar orden ${orden.numero_orden}?`)) return
   try {
     await api.put(`/api/ordenes/${orden.id}/status`, { estado: nuevoEstado })
-    ordenes.value = ordenes.value.filter(o => o.id !== orden.id)
-    prevIds.delete(orden.id)
+    quitarOrden(orden)
   } catch (e) {
     alert(e.response?.data?.detail || 'Error al actualizar')
   }

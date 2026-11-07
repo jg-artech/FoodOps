@@ -62,7 +62,10 @@
         class="flex-1 bg-green-400 hover:bg-green-300 text-green-900 font-black py-3 rounded-xl text-lg transition">
         ✓ LISTO
       </button>
-      <button @click="$emit('cambiar', orden, 'cancelado')"
+      <!-- Solo roles que cancelan desde cocina, y nunca en una orden cobrada
+           (el backend igual responde 403 / 409). -->
+      <button v-if="puedeCancelar && orden.estado_cobro !== 'cobrada'" @click="$emit('cancelar', orden)"
+        title="Cancelar orden" aria-label="Cancelar orden"
         class="bg-red-500 hover:bg-red-400 text-white font-black px-4 py-3 rounded-xl transition">
         ✕
       </button>
@@ -81,8 +84,10 @@ const props = defineProps({
   // lo devuelve GET /api/productos-menu. Trae la receta completa, no solo lo que
   // el cliente eligió (que ya viene embebido en item.producto).
   recetas: { type: Object, default: () => ({}) },
+  // ¿El usuario en sesión puede cancelar desde cocina? (ROLES_CANCELAR_COCINA)
+  puedeCancelar: { type: Boolean, default: false },
 })
-defineEmits(['cambiar'])
+defineEmits(['cambiar', 'cancelar'])
 
 // El cargo de entrega no es algo que cocina prepare: no se muestra.
 const itemsCocina = computed(() => itemsSinCargo(props.orden.items))
