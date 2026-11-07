@@ -55,6 +55,17 @@
         <EstadoFactura :orden="orden" class="mb-3" />
 
         <div class="bg-gray-50 rounded-xl p-3 text-sm space-y-1 mb-3">
+          <!-- Concepto: productos y cargo de entrega, que se cobra junto con la orden -->
+          <template v-if="cargoDe(orden.items)">
+            <div class="flex justify-between text-gray-500">
+              <span>Productos</span>
+              <span>{{ formatQ(orden.total - cargoDe(orden.items).subtotal) }}</span>
+            </div>
+            <div class="flex justify-between text-gray-500">
+              <span>🛵 Cargo de entrega</span>
+              <span>{{ formatQ(cargoDe(orden.items).subtotal) }}</span>
+            </div>
+          </template>
           <div class="flex justify-between">
             <span class="text-gray-500">Total de la orden</span>
             <span class="font-bold">{{ formatQ(orden.total) }}</span>
@@ -78,7 +89,11 @@
     <div v-if="ordenActiva" class="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center px-4 z-50">
       <div class="bg-white rounded-2xl p-6 max-w-sm w-full">
         <p class="font-bold text-gray-800 text-lg mb-1">{{ ordenActiva.numero_orden }}</p>
-        <p class="text-sm text-gray-500 mb-4">Total: <strong>{{ formatQ(ordenActiva.total) }}</strong></p>
+        <p class="text-sm text-gray-500" :class="cargoDe(ordenActiva.items) ? 'mb-1' : 'mb-4'">Total: <strong>{{ formatQ(ordenActiva.total) }}</strong></p>
+        <p v-if="cargoDe(ordenActiva.items)" class="text-xs text-gray-500 mb-4">
+          Incluye productos {{ formatQ(ordenActiva.total - cargoDe(ordenActiva.items).subtotal) }}
+          y cargo de entrega {{ formatQ(cargoDe(ordenActiva.items).subtotal) }}
+        </p>
 
         <label class="block text-xs text-gray-500 mb-1">¿Cuánto efectivo recibiste?</label>
         <input v-model.number="form.monto_recibido" type="number" min="0" step="0.01" autofocus
@@ -110,6 +125,7 @@
 
 <script setup>
 import { formatQ } from '@/utils/moneda.js'
+import { cargoDe } from '@/utils/cargoEntrega.js'
 import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import AbrirCajon from '@/components/AbrirCajon.vue'

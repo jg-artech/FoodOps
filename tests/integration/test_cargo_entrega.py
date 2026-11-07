@@ -627,6 +627,42 @@ def test_cuadre_cuenta_el_total_del_servidor_aunque_el_cliente_mande_otro(api, t
     s.close()
 
 
+def test_confirmar_cobro_audita_el_concepto_con_el_cargo(api, tienda, S):
+    orden_id = _crear(api, tienda["vendedor"], _orden(25, metodo="efectivo")).json()["id"]
+    r = api.post(f"/api/ordenes/{orden_id}/confirmar-cobro",
+                 json={"monto_recibido": 116, "vuelto_entregado": 0}, headers=_auth(tienda["resp"]))
+    assert r.status_code == 200, r.text
+    log = _auditoria(S, "CONFIRMAR_COBRO_EFECTIVO", entidad_id=str(orden_id))[0]
+    assert log.detalle["concepto"] == {"productos": 91.0, "cargo_entrega": 25.0}
+
+
+def test_confirmar_cobro_sin_cargo_audita_cargo_cero(api, tienda, S):
+    orden_id = _crear(api, tienda["vendedor"], _orden(metodo="efectivo")).json()["id"]
+    r = api.post(f"/api/ordenes/{orden_id}/confirmar-cobro",
+                 json={"monto_recibido": 91, "vuelto_entregado": 0}, headers=_auth(tienda["resp"]))
+    assert r.status_code == 200, r.text
+    log = _auditoria(S, "CONFIRMAR_COBRO_EFECTIVO", entidad_id=str(orden_id))[0]
+    assert log.detalle["concepto"] == {"productos": 91.0, "cargo_entrega": 0.0}
+
+
+def test_cierre_de_caja_bloqueado_con_domicilio_con_cargo_sin_liquidar(api, tienda):
+    """Decisión: no se cierra la caja mientras haya órdenes sin liquidar,
+    incluidas las de domicilio con cargo de entrega."""
+    resp = tienda["resp"]
+    assert api.post("/api/caja/abrir", json={"fondo_inicial": 0}, headers=_auth(resp)).status_code == 200
+    orden_id = _crear(api, tienda["vendedor"], _orden(25, metodo="efectivo")).json()["id"]
+
+    r = api.post("/api/caja/cerrar", json={"efectivo_contado": 116}, headers=_auth(resp))
+    assert r.status_code == 400
+    assert "sin confirmar el cobro" in r.json()["detail"]
+
+    # Liquidada la orden, ese motivo de bloqueo desaparece.
+    api.post(f"/api/ordenes/{orden_id}/confirmar-cobro",
+             json={"monto_recibido": 116, "vuelto_entregado": 0}, headers=_auth(resp))
+    r = api.post("/api/caja/cerrar", json={"efectivo_contado": 116}, headers=_auth(resp))
+    assert "sin confirmar el cobro" not in str(r.json().get("detail", ""))
+
+
 # ---------------------------------------------------------------------------
 # Reportes e impresión
 # ---------------------------------------------------------------------------

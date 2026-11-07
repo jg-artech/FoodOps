@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -279,8 +279,11 @@ def crear_orden(
             # TODO(cargo de entrega): cuando exista la edición de órdenes,
             # auditar también el cambio y la eliminación del cargo, con el
             # mismo formato antes/después.
-            # TODO(cargo de entrega, sin decidir): quién recibe el dinero del
-            # cargo (el repartidor o el local). No cambia el flujo de cobro.
+            # Decisión (2026-11-07): el repartidor recibe el dinero del cargo
+            # y lo entrega al cobrador. El cargo va en el total de la orden,
+            # se cobra con su mismo método de pago y se confirma junto con el
+            # cobro (confirmar-cobro audita el concepto). La caja no cierra
+            # con órdenes sin liquidar.
             registrar_auditoria(
                 session,
                 accion="CARGO_ENTREGA_REGISTRADO",
@@ -456,6 +459,17 @@ def actualizar_estado_orden(
         session.close()
 
 
+def _concepto_cobro(session, orden: Orden) -> dict:
+    """Desglose del total de la orden: productos y cargo de entrega."""
+    cargo = session.execute(
+        select(func.coalesce(func.sum(OrdenItem.subtotal), 0)).where(
+            OrdenItem.orden_id == orden.id, OrdenItem.tipo == ITEM_TIPO_ENTREGA
+        )
+    ).scalar_one()
+    cargo = round(float(cargo), 2)
+    return {"productos": round(float(orden.total) - cargo, 2), "cargo_entrega": cargo}
+
+
 @router.post("/{orden_id}/confirmar-cobro")
 def confirmar_cobro_efectivo(
     orden_id: int,
@@ -497,6 +511,9 @@ def confirmar_cobro_efectivo(
                 "monto_recibido": float(body.monto_recibido),
                 "vuelto_entregado": float(body.vuelto_entregado),
                 "vuelto_esperado": float(orden.vuelto) if orden.vuelto is not None else None,
+                # Concepto de lo recibido: productos y cargo de entrega (el
+                # cargo se cobra junto con la orden, por el mismo método).
+                "concepto": _concepto_cobro(session, orden),
             },
         )
         # Abre el cajón físico una sola vez por orden, solo si la tienda tiene
