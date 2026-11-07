@@ -36,7 +36,7 @@
       <div v-for="f in pendientes" :key="f.id" class="bg-white border border-gray-200 rounded-xl p-3">
         <div class="flex items-center justify-between mb-2">
           <p class="font-semibold text-gray-800 text-sm">{{ nombreRepartidor(f.repartidor_id) }}</p>
-          <span class="font-bold text-blue-500">Q{{ Number(f.monto_entregado).toFixed(2) }}</span>
+          <span class="font-bold text-blue-500">{{ formatQ(f.monto_entregado) }}</span>
         </div>
         <div class="flex items-center gap-2">
           <input v-model.number="liquidaciones[f.id]" type="number" min="0" step="0.01" placeholder="Monto liquidado"
@@ -54,9 +54,9 @@
       <div v-for="f in liquidados" :key="f.id" class="bg-white border border-gray-200 rounded-xl p-3 flex items-center justify-between">
         <p class="font-semibold text-gray-800 text-sm">{{ nombreRepartidor(f.repartidor_id) }}</p>
         <div class="text-right">
-          <p class="text-sm text-gray-500">Q{{ Number(f.monto_entregado).toFixed(2) }} → Q{{ Number(f.monto_liquidado).toFixed(2) }}</p>
+          <p class="text-sm text-gray-500">{{ formatQ(f.monto_entregado) }} → {{ formatQ(f.monto_liquidado) }}</p>
           <p class="text-xs font-bold" :class="Number(f.diferencia) === 0 ? 'text-green-600' : 'text-red-500'">
-            Diferencia: Q{{ Number(f.diferencia).toFixed(2) }}
+            Diferencia: {{ formatQ(f.diferencia) }}
           </p>
         </div>
       </div>
@@ -65,6 +65,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/services/api'
 

@@ -3,7 +3,7 @@
     <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
       <div class="p-6 border-b border-gray-100">
         <h3 class="text-xl font-bold text-gray-800">🍗 Seleccionar pieza</h3>
-        <p class="text-gray-500 text-sm mt-1">¼ Pollo — Q{{ precio }}</p>
+        <p class="text-gray-500 text-sm mt-1">¼ Pollo — {{ formatQ(precio) }}</p>
       </div>
 
       <div class="p-4 space-y-2">
@@ -35,6 +35,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { ref } from 'vue'
 
 defineProps({

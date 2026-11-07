@@ -28,22 +28,22 @@
     <div v-else class="space-y-4">
       <div class="rounded-2xl p-5 shadow text-white" :class="caja.estado === 'abierta' ? 'bg-orange-500' : 'bg-gray-500'">
         <p class="text-sm opacity-80">Caja de hoy — {{ caja.estado === 'abierta' ? 'Abierta' : 'Cerrada' }}</p>
-        <p class="text-3xl font-black">Q{{ Number(caja.fondo_inicial).toFixed(2) }}</p>
+        <p class="text-3xl font-black">{{ formatQ(caja.fondo_inicial) }}</p>
         <p class="text-xs opacity-80">fondo inicial</p>
         <div v-if="caja.estado !== 'abierta'" class="mt-3 pt-3 border-t border-white/30 flex justify-between text-sm">
           <span>Descuadre</span>
-          <span class="font-bold">Q{{ Number(caja.descuadre ?? 0).toFixed(2) }}</span>
+          <span class="font-bold">{{ formatQ(caja.descuadre ?? 0) }}</span>
         </div>
       </div>
 
       <div v-if="actual" class="grid grid-cols-2 gap-3">
         <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
           <p class="text-xs text-gray-400 mb-1">Gastos hoy</p>
-          <p class="text-xl font-bold text-red-500">Q{{ Number(actual.gastos_hoy).toFixed(2) }}</p>
+          <p class="text-xl font-bold text-red-500">{{ formatQ(actual.gastos_hoy) }}</p>
         </div>
         <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
           <p class="text-xs text-gray-400 mb-1">Fondos sin liquidar</p>
-          <p class="text-xl font-bold text-blue-500">Q{{ Number(actual.fondos_entregados).toFixed(2) }}</p>
+          <p class="text-xl font-bold text-blue-500">{{ formatQ(actual.fondos_entregados) }}</p>
         </div>
       </div>
 
@@ -81,6 +81,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
 import EstadoAgente from '@/components/EstadoAgente.vue'

@@ -68,7 +68,7 @@
             <div class="text-2xl mb-1">{{ item.emoji }}</div>
             <p class="font-semibold text-gray-800 text-sm leading-tight">{{ item.nombre }}</p>
             <p v-if="item.contenido" class="text-xs text-gray-400 mt-0.5 leading-tight">{{ item.contenido }}</p>
-            <p class="text-orange-500 font-bold mt-1 mb-2">Q{{ item.precio }}</p>
+            <p class="text-orange-500 font-bold mt-1 mb-2">{{ formatQ(item.precio) }}</p>
             <div class="flex items-center justify-between">
               <button @click="quitarItem(item)"
                 class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 font-bold flex items-center justify-center text-lg">−</button>
@@ -84,7 +84,7 @@
       <div class="sticky bottom-4 bg-white border border-gray-200 rounded-2xl shadow-xl p-4 flex items-center justify-between">
         <div>
           <p class="text-xs text-gray-400">{{ totalItems }} producto(s)</p>
-          <p class="text-2xl font-bold text-orange-500">Q{{ totalPrecio.toFixed(2) }}</p>
+          <p class="text-2xl font-bold text-orange-500">{{ formatQ(totalPrecio) }}</p>
         </div>
         <button @click="step = 3" :disabled="cart.length === 0"
           class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-6 py-3 rounded-xl transition disabled:opacity-40">
@@ -115,13 +115,13 @@
                 class="w-5 h-5 rounded-full bg-red-100 hover:bg-red-200 text-red-600 text-xs font-bold flex items-center justify-center">−</button>
               <span class="text-gray-700">{{ entry.cantidad }}x {{ entry.nombre }}</span>
             </div>
-            <span class="font-semibold text-gray-700">Q{{ (entry.cantidad * entry.precio).toFixed(2) }}</span>
+            <span class="font-semibold text-gray-700">{{ formatQ(entry.cantidad * entry.precio) }}</span>
           </div>
         </div>
         <hr class="my-3">
         <div class="flex justify-between font-bold text-lg">
           <span>TOTAL</span>
-          <span class="text-orange-500">Q{{ totalPrecio.toFixed(2) }}</span>
+          <span class="text-orange-500">{{ formatQ(totalPrecio) }}</span>
         </div>
       </div>
 
@@ -157,7 +157,7 @@
     <!-- ───── PASO 4: Método de pago ───── -->
     <div v-if="step === 4">
       <h2 class="text-xl font-bold text-gray-800 mb-2">¿Cómo paga?</h2>
-      <p class="text-2xl font-black text-orange-500 mb-5">Total: Q{{ totalPrecio.toFixed(2) }}</p>
+      <p class="text-2xl font-black text-orange-500 mb-5">Total: {{ formatQ(totalPrecio) }}</p>
 
       <div class="space-y-3 mb-4">
         <button v-for="m in metodos" :key="m.value" @click="form.metodo_pago = m.value; form.dinero_recibido = ''"
@@ -184,7 +184,7 @@
             <button v-for="b in billetes" :key="b" @click="form.dinero_recibido = b"
               class="py-2 rounded-xl text-sm font-bold border-2 transition-all"
               :class="form.dinero_recibido === b ? 'border-green-500 bg-green-500 text-white' : 'border-gray-200 bg-white text-gray-700 hover:border-green-400'">
-              Q{{ b }}
+              {{ formatQ(b) }}
             </button>
           </div>
 
@@ -197,7 +197,7 @@
             </p>
             <p class="text-4xl font-black"
               :class="vuelto >= 0 ? 'text-green-600' : 'text-red-500'">
-              Q{{ Math.abs(vuelto).toFixed(2) }}
+              {{ formatQ(Math.abs(vuelto)) }}
             </p>
           </div>
         </div>
@@ -211,7 +211,7 @@
         </button>
         <button @click="confirmarOrden" :disabled="!canConfirmar || loading"
           class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition disabled:opacity-40">
-          {{ loading ? 'Creando...' : `✓ CONFIRMAR — Q${totalPrecio.toFixed(2)}` }}
+          {{ loading ? 'Creando...' : `✓ CONFIRMAR — ${formatQ(totalPrecio)}` }}
         </button>
       </div>
     </div>
@@ -227,22 +227,22 @@
         class="bg-green-50 border border-green-200 rounded-2xl p-4 mb-5 text-left">
         <div class="flex justify-between text-sm text-gray-600 mb-1">
           <span>Total orden:</span>
-          <span class="font-bold">Q{{ Number(ordenCreada.total).toFixed(2) }}</span>
+          <span class="font-bold">{{ formatQ(ordenCreada.total) }}</span>
         </div>
         <div class="flex justify-between text-sm text-gray-600 mb-2">
           <span>Efectivo recibido:</span>
-          <span class="font-bold">Q{{ Number(ordenCreada.dinero_recibido).toFixed(2) }}</span>
+          <span class="font-bold">{{ formatQ(ordenCreada.dinero_recibido) }}</span>
         </div>
         <div class="flex justify-between text-base font-black border-t border-green-200 pt-2">
           <span class="text-green-700">Vuelto:</span>
-          <span class="text-green-600 text-xl">Q{{ Number(ordenCreada.vuelto || 0).toFixed(2) }}</span>
+          <span class="text-green-600 text-xl">{{ formatQ(ordenCreada.vuelto || 0) }}</span>
         </div>
       </div>
       <p v-if="ordenCreada?.metodo_pago === 'efectivo'" class="text-xs text-amber-600 mb-5 -mt-3">
         💵 Entrega el efectivo al responsable - el cobro queda pendiente hasta que confirme cuánto recibió.
       </p>
 
-      <p v-else class="text-gray-500 mb-5">Total: <strong>Q{{ totalPrecio.toFixed(2) }}</strong></p>
+      <p v-else class="text-gray-500 mb-5">Total: <strong>{{ formatQ(totalPrecio) }}</strong></p>
       <p v-if="ordenCreada?.metodo_pago === 'efectivo' && esTomadorOrden" class="text-xs text-gray-500 mb-5 -mt-3">
         🗄️ El cajón lo abre el responsable de la tienda.
       </p>
@@ -287,6 +287,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/index'

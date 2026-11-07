@@ -52,11 +52,11 @@
         <div class="bg-gray-50 rounded-xl p-3 text-sm space-y-1 mb-3">
           <div class="flex justify-between">
             <span class="text-gray-500">Total de la orden</span>
-            <span class="font-bold">Q{{ Number(orden.total).toFixed(2) }}</span>
+            <span class="font-bold">{{ formatQ(orden.total) }}</span>
           </div>
           <div class="flex justify-between text-gray-400 text-xs">
             <span>Estimado por el vendedor</span>
-            <span>recibió Q{{ Number(orden.dinero_recibido ?? 0).toFixed(2) }}, vuelto Q{{ Number(orden.vuelto ?? 0).toFixed(2) }}</span>
+            <span>recibió {{ formatQ(orden.dinero_recibido ?? 0) }}, vuelto {{ formatQ(orden.vuelto ?? 0) }}</span>
           </div>
         </div>
 
@@ -73,7 +73,7 @@
     <div v-if="ordenActiva" class="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center px-4 z-50">
       <div class="bg-white rounded-2xl p-6 max-w-sm w-full">
         <p class="font-bold text-gray-800 text-lg mb-1">{{ ordenActiva.numero_orden }}</p>
-        <p class="text-sm text-gray-500 mb-4">Total: <strong>Q{{ Number(ordenActiva.total).toFixed(2) }}</strong></p>
+        <p class="text-sm text-gray-500 mb-4">Total: <strong>{{ formatQ(ordenActiva.total) }}</strong></p>
 
         <label class="block text-xs text-gray-500 mb-1">¿Cuánto efectivo recibiste?</label>
         <input v-model.number="form.monto_recibido" type="number" min="0" step="0.01" autofocus
@@ -84,7 +84,7 @@
           class="w-full text-xl font-bold text-center border-2 border-gray-300 rounded-xl px-3 py-2 mb-4 focus:outline-none focus:border-orange-400" />
 
         <p v-if="vueltoCalculadoDistinto" class="text-xs text-amber-600 mb-3 text-center">
-          ⚠ El vuelto que escribiste no coincide con recibido − total (Q{{ vueltoCalculado.toFixed(2) }}). Se guarda igual tal como lo confirmes.
+          ⚠ El vuelto que escribiste no coincide con recibido − total ({{ formatQ(vueltoCalculado) }}). Se guarda igual tal como lo confirmes.
         </p>
 
         <p v-if="modalError" class="text-red-500 text-xs text-center mb-3">{{ modalError }}</p>
@@ -104,6 +104,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import AbrirCajon from '@/components/AbrirCajon.vue'

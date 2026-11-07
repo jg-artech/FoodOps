@@ -102,7 +102,7 @@
               class="px-5 py-3 flex items-center gap-3">
               <span class="text-xl shrink-0">{{ item.emoji }}</span>
               <span class="flex-1 text-sm text-gray-700 font-medium">{{ item.nombre }}</span>
-              <span class="text-sm text-orange-500 font-bold w-16 text-right shrink-0">Q{{ item.precio }}</span>
+              <span class="text-sm text-orange-500 font-bold w-16 text-right shrink-0">{{ formatQ(item.precio) }}</span>
               <div class="flex items-center gap-1 shrink-0">
                 <span class="text-xs text-gray-400">Costo Q</span>
                 <input v-model.number="costos[item.id]" type="number" min="0" step="0.25"
@@ -123,7 +123,7 @@
                 <div class="flex items-center gap-2">
                   <span class="text-xl">{{ item.emoji }}</span>
                   <span class="font-semibold text-gray-800">{{ item.nombre }}</span>
-                  <span class="text-orange-500 font-bold text-sm">Q{{ item.precio }}</span>
+                  <span class="text-orange-500 font-bold text-sm">{{ formatQ(item.precio) }}</span>
                 </div>
                 <button @click="abrirDesglose(item)"
                   class="text-xs bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-full font-semibold transition">
@@ -138,12 +138,12 @@
                     <p v-for="(comp, ci) in comboCostos[item.id].componentes" :key="ci"
                       class="text-xs text-gray-500">
                       {{ comp.cantidad }} {{ comp.unidad }} {{ comp.nombre }}
-                      <span class="text-gray-400">→ Q{{ (comp.cantidad * comp.costo_unitario).toFixed(2) }}</span>
+                      <span class="text-gray-400">→ {{ formatQ(comp.cantidad * comp.costo_unitario) }}</span>
                     </p>
                   </div>
                   <div class="text-right shrink-0">
                     <p class="text-xs text-gray-500">Costo total</p>
-                    <p class="font-bold text-red-500 text-sm">Q{{ comboCostos[item.id].total.toFixed(2) }}</p>
+                    <p class="font-bold text-red-500 text-sm">{{ formatQ(comboCostos[item.id].total) }}</p>
                     <p class="font-bold text-sm" :class="margenColor(comboCostos[item.id].total, item.precio)">
                       {{ calcPct(comboCostos[item.id].total, item.precio) }}% margen
                     </p>
@@ -172,7 +172,7 @@
         <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
           <div>
             <p class="font-bold text-gray-800 text-lg">{{ desgloseModal.item?.emoji }} {{ desgloseModal.item?.nombre }}</p>
-            <p class="text-xs text-gray-400 mt-0.5">Precio de venta: <span class="font-bold text-orange-500">Q{{ desgloseModal.item?.precio }}</span></p>
+            <p class="text-xs text-gray-400 mt-0.5">Precio de venta: <span class="font-bold text-orange-500">{{ formatQ(desgloseModal.item?.precio) }}</span></p>
           </div>
           <button @click="desgloseModal.visible = false" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">✕</button>
         </div>
@@ -200,7 +200,7 @@
             <input v-model.number="comp.costo_unitario" type="number" min="0" step="0.25" placeholder="0.00"
               class="col-span-2 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-1 focus:ring-orange-400" />
             <span class="col-span-1 text-right text-xs font-semibold text-gray-600">
-              Q{{ ((comp.cantidad || 0) * (comp.costo_unitario || 0)).toFixed(2) }}
+              {{ formatQ((comp.cantidad || 0) * (comp.costo_unitario || 0)) }}
             </span>
             <button @click="desgloseModal.componentes.splice(i, 1)"
               class="col-span-1 text-red-400 hover:text-red-600 text-lg text-center leading-none">✕</button>
@@ -215,17 +215,17 @@
           <div v-if="desgloseModal.componentes.length" class="mt-5 bg-gray-50 rounded-xl p-4">
             <div class="flex justify-between text-sm text-gray-600 mb-1">
               <span>Costo total ingredientes:</span>
-              <span class="font-bold text-red-500">Q{{ desgloseTotal.toFixed(2) }}</span>
+              <span class="font-bold text-red-500">{{ formatQ(desgloseTotal) }}</span>
             </div>
             <div class="flex justify-between text-sm text-gray-600 mb-1">
               <span>Precio de venta:</span>
-              <span class="font-bold text-orange-500">Q{{ desgloseModal.item?.precio || 0 }}</span>
+              <span class="font-bold text-orange-500">{{ formatQ(desgloseModal.item?.precio || 0) }}</span>
             </div>
             <hr class="my-2 border-gray-200" />
             <div class="flex justify-between text-base font-bold">
               <span>Ganancia bruta:</span>
               <span :class="desgloseGanancia >= 0 ? 'text-green-600' : 'text-red-600'">
-                Q{{ desgloseGanancia.toFixed(2) }}
+                {{ formatQ(desgloseGanancia) }}
               </span>
             </div>
             <div class="mt-2">
@@ -285,7 +285,7 @@
               </span>
             </div>
             <p class="text-sm text-gray-500 mt-1 ml-8">{{ ini.descripcion }}</p>
-            <p class="text-orange-500 font-bold ml-8 mt-1">Q{{ ini.precio }}</p>
+            <p class="text-orange-500 font-bold ml-8 mt-1">{{ formatQ(ini.precio) }}</p>
           </div>
           <div class="flex gap-2 shrink-0">
             <button @click="ini.activa = !ini.activa"
@@ -552,6 +552,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { getMenu, saveMenu, MENU_ITEMS, getCategorias, saveCategorias, CATEGORIAS } from '@/data/menu.js'
 import api from '@/services/api'

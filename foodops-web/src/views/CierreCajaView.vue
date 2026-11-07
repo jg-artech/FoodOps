@@ -12,12 +12,12 @@
       <div class="rounded-2xl p-5 shadow text-white"
         :class="Math.abs(Number(caja.descuadre ?? 0)) <= UMBRAL ? 'bg-green-600' : 'bg-red-500'">
         <p class="text-sm opacity-80">Caja cerrada</p>
-        <p class="text-3xl font-black">Q{{ Number(caja.descuadre ?? 0).toFixed(2) }}</p>
+        <p class="text-3xl font-black">{{ formatQ(caja.descuadre ?? 0) }}</p>
         <p class="text-xs opacity-80">descuadre</p>
       </div>
       <div class="bg-white rounded-2xl border border-gray-200 p-5 space-y-2 text-sm">
-        <div class="flex justify-between"><span class="text-gray-500">Efectivo esperado</span><span class="font-bold">Q{{ Number(caja.efectivo_esperado ?? 0).toFixed(2) }}</span></div>
-        <div class="flex justify-between"><span class="text-gray-500">Efectivo contado</span><span class="font-bold">Q{{ Number(caja.efectivo_contado ?? 0).toFixed(2) }}</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Efectivo esperado</span><span class="font-bold">{{ formatQ(caja.efectivo_esperado ?? 0) }}</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Efectivo contado</span><span class="font-bold">{{ formatQ(caja.efectivo_contado ?? 0) }}</span></div>
       </div>
       <RouterLink to="/caja" class="block w-full text-center border border-gray-300 text-gray-600 font-semibold py-3 rounded-xl hover:bg-gray-50">
         Volver a Caja
@@ -27,9 +27,9 @@
     <!-- Paso 1: resumen -->
     <div v-else-if="paso === 1" class="space-y-4">
       <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-2 text-sm">
-        <div class="flex justify-between"><span class="text-gray-500">Fondo inicial</span><span class="font-bold">Q{{ Number(caja.fondo_inicial).toFixed(2) }}</span></div>
-        <div class="flex justify-between"><span class="text-gray-500">Gastos del día</span><span class="font-bold text-red-500">-Q{{ Number(actual.gastos_hoy).toFixed(2) }}</span></div>
-        <div class="flex justify-between"><span class="text-gray-500">Fondos sin liquidar</span><span class="font-bold text-red-500">-Q{{ Number(actual.fondos_entregados).toFixed(2) }}</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Fondo inicial</span><span class="font-bold">{{ formatQ(caja.fondo_inicial) }}</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Gastos del día</span><span class="font-bold text-red-500">-{{ formatQ(actual.gastos_hoy) }}</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Fondos sin liquidar</span><span class="font-bold text-red-500">-{{ formatQ(actual.fondos_entregados) }}</span></div>
         <hr class="my-2">
         <p class="text-xs text-amber-600">El efectivo esperado final se calcula en el backend al confirmar el cierre (incluye ventas en efectivo y liquidaciones del día).</p>
       </div>
@@ -79,7 +79,7 @@
     <div v-if="confirmar" class="fixed inset-0 bg-black/50 flex items-center justify-center px-4 z-50">
       <div class="bg-white rounded-2xl p-6 max-w-sm w-full">
         <p class="font-bold text-gray-800 text-lg mb-2">¿Está seguro?</p>
-        <p class="text-sm text-gray-500 mb-5">Esta acción cerrará la caja del día. Contado: <strong>Q{{ Number(efectivoContado).toFixed(2) }}</strong></p>
+        <p class="text-sm text-gray-500 mb-5">Esta acción cerrará la caja del día. Contado: <strong>{{ formatQ(efectivoContado) }}</strong></p>
         <div class="flex gap-3">
           <button @click="confirmar = false" class="flex-1 border border-gray-300 text-gray-600 font-semibold py-3 rounded-xl">Cancelar</button>
           <button @click="cerrarCaja" :disabled="submitting" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl disabled:opacity-40">
@@ -92,6 +92,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
 

@@ -5,7 +5,7 @@
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
         <div>
           <p class="font-bold text-gray-800 text-lg">Personalizar: {{ nombre }}</p>
-          <p class="text-xs text-gray-400 mt-0.5">Q{{ Number(precio).toFixed(2) }}</p>
+          <p class="text-xs text-gray-400 mt-0.5">{{ formatQ(precio) }}</p>
         </div>
         <button @click="$emit('cancelar')" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">✕</button>
       </div>
@@ -85,6 +85,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { reactive, computed, watch } from 'vue'
 
 const props = defineProps({

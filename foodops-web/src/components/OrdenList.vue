@@ -19,7 +19,7 @@
                 class="text-xs font-medium px-2 py-1 rounded-full"
                 :class="estadoClase(orden.estado)"
               >{{ orden.estado }}</span>
-              <p class="text-sm font-semibold mt-1">${{ orden.total.toFixed(2) }}</p>
+              <p class="text-sm font-semibold mt-1">{{ formatQ(orden.total) }}</p>
             </div>
             <button
               @click="imprimir(orden)"
@@ -40,6 +40,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { reactive, ref } from 'vue'
 import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
 import HistorialImpresion from '@/components/HistorialImpresion.vue'

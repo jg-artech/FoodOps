@@ -27,7 +27,7 @@
         <p class="text-gray-500 text-sm mt-1">En preparación</p>
       </div>
       <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm text-center">
-        <p class="text-3xl font-bold text-gray-700">${{ totalVentas.toFixed(2) }}</p>
+        <p class="text-3xl font-bold text-gray-700">{{ formatQ(totalVentas) }}</p>
         <p class="text-gray-500 text-sm mt-1">Total ventas</p>
       </div>
     </div>
@@ -40,6 +40,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/store/index'
 import OrdenList from '@/components/OrdenList.vue'

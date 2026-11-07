@@ -18,11 +18,11 @@
             <p class="text-xs opacity-80">órdenes</p>
           </div>
           <div>
-            <p class="text-3xl font-black">Q{{ reporte.total_dinero.toFixed(2) }}</p>
+            <p class="text-3xl font-black">{{ formatQ(reporte.total_dinero) }}</p>
             <p class="text-xs opacity-80">ventas</p>
           </div>
           <div v-if="reporte.total_ordenes > 0">
-            <p class="text-3xl font-black">Q{{ (reporte.total_dinero / reporte.total_ordenes).toFixed(2) }}</p>
+            <p class="text-3xl font-black">{{ formatQ(reporte.total_dinero / reporte.total_ordenes) }}</p>
             <p class="text-xs opacity-80">promedio/orden</p>
           </div>
         </div>
@@ -35,15 +35,15 @@
         <div class="grid grid-cols-2 gap-4 mb-4">
           <div class="bg-gray-50 rounded-xl p-3 text-center">
             <p class="text-xs text-gray-500 mb-1">Ventas totales</p>
-            <p class="text-xl font-black text-gray-800">Q{{ rentabilidad.total_venta.toFixed(2) }}</p>
+            <p class="text-xl font-black text-gray-800">{{ formatQ(rentabilidad.total_venta) }}</p>
           </div>
           <div class="bg-gray-50 rounded-xl p-3 text-center">
             <p class="text-xs text-gray-500 mb-1">Costo total</p>
-            <p class="text-xl font-black text-red-500">Q{{ rentabilidad.total_costo.toFixed(2) }}</p>
+            <p class="text-xl font-black text-red-500">{{ formatQ(rentabilidad.total_costo) }}</p>
           </div>
           <div class="bg-green-50 rounded-xl p-3 text-center col-span-2">
             <p class="text-xs text-green-700 mb-1">Ganancia neta</p>
-            <p class="text-3xl font-black text-green-600">Q{{ rentabilidad.margen_total.toFixed(2) }}</p>
+            <p class="text-3xl font-black text-green-600">{{ formatQ(rentabilidad.margen_total) }}</p>
           </div>
         </div>
         <!-- Barra de margen -->
@@ -82,7 +82,7 @@
                 <div class="h-full bg-orange-400 rounded-full transition-all"
                   :style="{ width: porcentaje(m.key) + '%' }"></div>
               </div>
-              <span class="text-sm font-bold w-20 text-right">Q{{ (reporte.por_metodo_pago[m.key] || 0).toFixed(2) }}</span>
+              <span class="text-sm font-bold w-20 text-right">{{ formatQ(reporte.por_metodo_pago[m.key] || 0) }}</span>
               <span class="text-xs text-gray-400 w-8 text-right">{{ porcentaje(m.key) }}%</span>
             </div>
           </div>
@@ -118,6 +118,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/store/index'
 import api from '@/services/api'

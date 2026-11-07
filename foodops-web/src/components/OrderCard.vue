@@ -44,7 +44,7 @@
 
     <!-- Footer -->
     <div class="flex items-center justify-between mt-auto">
-      <span class="font-bold text-orange-500">Q{{ orden.total.toFixed(2) }}</span>
+      <span class="font-bold text-orange-500">{{ formatQ(orden.total) }}</span>
       <div class="flex gap-2">
         <button
           @click="impresion.imprimir(orden)"
@@ -63,6 +63,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { computed, reactive } from 'vue'
 import { getMenu } from '@/data/menu.js'
 import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'

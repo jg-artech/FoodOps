@@ -46,7 +46,7 @@
         <span class="text-4xl">💰</span>
         <div class="text-center">
           <p class="text-2xl font-bold">CIERRE DEL DÍA</p>
-          <p class="text-sm opacity-80 mt-1">Total: Q{{ totalVentas.toFixed(2) }}</p>
+          <p class="text-sm opacity-80 mt-1">Total: {{ formatQ(totalVentas) }}</p>
         </div>
       </RouterLink>
 
@@ -59,6 +59,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/store/index'
 import api from '@/services/api'

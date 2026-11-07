@@ -49,7 +49,7 @@
         </div>
         <div class="text-right shrink-0 ml-3">
           <p class="font-bold text-gray-700 text-sm">{{ d.cantidad }} {{ d.unidad }}</p>
-          <p v-if="d.costo_estimado" class="text-xs text-red-500">Q{{ Number(d.costo_estimado).toFixed(2) }}</p>
+          <p v-if="d.costo_estimado" class="text-xs text-red-500">{{ formatQ(d.costo_estimado) }}</p>
         </div>
       </div>
     </div>
@@ -57,6 +57,7 @@
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/services/api'
 

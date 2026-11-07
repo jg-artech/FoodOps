@@ -39,13 +39,14 @@
           <p class="font-semibold text-gray-800 text-sm truncate">{{ g.descripcion }}</p>
           <p class="text-xs text-gray-400">{{ categoriaLabel(g.categoria) }} · {{ hora(g.created_at) }}</p>
         </div>
-        <span class="font-bold text-red-500 shrink-0 ml-3">Q{{ Number(g.monto).toFixed(2) }}</span>
+        <span class="font-bold text-red-500 shrink-0 ml-3">{{ formatQ(g.monto) }}</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
+import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/services/api'
 
