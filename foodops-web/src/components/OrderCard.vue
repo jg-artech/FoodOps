@@ -42,6 +42,8 @@
       <p class="text-xs text-amber-900 font-medium">{{ orden.notas_especiales }}</p>
     </div>
 
+    <EstadoFactura :orden="orden" />
+
     <!-- Footer -->
     <div class="flex items-center justify-between mt-auto">
       <span class="font-bold text-orange-500">{{ formatQ(orden.total) }}</span>
@@ -67,6 +69,7 @@ import { formatQ } from '@/utils/moneda.js'
 import { computed, reactive } from 'vue'
 import { getMenu } from '@/data/menu.js'
 import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
+import EstadoFactura from '@/components/EstadoFactura.vue'
 import HistorialImpresion from '@/components/HistorialImpresion.vue'
 import { useImpresionTicket } from '@/utils/impresionTicket.js'
 

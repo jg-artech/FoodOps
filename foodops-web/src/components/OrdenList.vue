@@ -31,6 +31,7 @@
             </button>
           </div>
         </div>
+        <EstadoFactura :orden="orden" class="mt-2" />
         <!-- Mensajes del último ticket enviado, solo en su fila -->
         <EstadoImpresionTicket v-if="filaActiva === orden.id" :impresion="impresion" class="mt-2" />
         <HistorialImpresion :orden-id="orden.id" class="mt-1" />
@@ -44,6 +45,7 @@ import { formatQ } from '@/utils/moneda.js'
 import { reactive, ref } from 'vue'
 import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
 import HistorialImpresion from '@/components/HistorialImpresion.vue'
+import EstadoFactura from '@/components/EstadoFactura.vue'
 import { useImpresionTicket } from '@/utils/impresionTicket.js'
 
 defineProps({

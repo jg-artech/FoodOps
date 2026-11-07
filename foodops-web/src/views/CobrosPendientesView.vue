@@ -22,6 +22,9 @@
         </button>
       </div>
       <EstadoImpresionTicket :impresion="impresion" class="mt-2" />
+      <!-- Ya cobrada: si requiere factura, aquí se puede marcar generada -->
+      <EstadoFactura :orden="ultimaConfirmada" class="mt-2"
+        @actualizado="(df) => (ultimaConfirmada = { ...ultimaConfirmada, datos_factura: df })" />
     </div>
 
     <div v-if="loading" class="text-center py-12 text-gray-400">Cargando...</div>
@@ -48,6 +51,8 @@
           {{ orden.es_domicilio ? '🏠' : '🥡' }}
           <span class="font-medium">{{ orden.cliente_nombre || 'Para llevar' }}</span>
         </p>
+
+        <EstadoFactura :orden="orden" class="mb-3" />
 
         <div class="bg-gray-50 rounded-xl p-3 text-sm space-y-1 mb-3">
           <div class="flex justify-between">
@@ -110,6 +115,7 @@ import api from '@/services/api'
 import AbrirCajon from '@/components/AbrirCajon.vue'
 import EstadoAgente from '@/components/EstadoAgente.vue'
 import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
+import EstadoFactura from '@/components/EstadoFactura.vue'
 import { useImpresionTicket } from '@/utils/impresionTicket.js'
 
 const ordenes = ref([])
