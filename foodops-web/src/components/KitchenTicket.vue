@@ -15,7 +15,7 @@
     <div class="px-4 py-2 flex-1">
       <p class="text-xs font-bold uppercase tracking-wider opacity-60 mb-2">Productos</p>
       <ul class="space-y-3">
-        <li v-for="(item, idx) in orden.items" :key="idx">
+        <li v-for="(item, idx) in itemsCocina" :key="idx">
           <div class="flex gap-2 items-baseline">
             <span class="font-black text-lg leading-tight shrink-0">{{ item.cantidad }}×</span>
             <span class="font-semibold text-base leading-snug">{{ desglosar(item.producto).base }}</span>
@@ -73,6 +73,7 @@
 <script setup>
 import { computed } from 'vue'
 import { getMenu } from '@/data/menu.js'
+import { itemsSinCargo } from '@/utils/cargoEntrega.js'
 
 const props = defineProps({
   orden: { type: Object, required: true },
@@ -82,6 +83,9 @@ const props = defineProps({
   recetas: { type: Object, default: () => ({}) },
 })
 defineEmits(['cambiar'])
+
+// El cargo de entrega no es algo que cocina prepare: no se muestra.
+const itemsCocina = computed(() => itemsSinCargo(props.orden.items))
 
 const menuItems = getMenu()
 

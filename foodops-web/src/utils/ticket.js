@@ -30,9 +30,10 @@ function buildTicketHtml(orden) {
   const nombrePlataforma = import.meta.env.VITE_APP_NAME || 'FoodOps'
   const metodoLabel = METODOS_LABEL[orden?.metodo_pago] || orden?.metodo_pago || ''
 
+  // El cargo de entrega va sin "1x": no es un producto.
   const filasItems = (orden?.items || []).map((i) => `
     <div class="row">
-      <span class="item-name">${escapeHtml(i.cantidad)}x ${escapeHtml(i.producto)}</span>
+      <span class="item-name">${i.tipo === 'entrega' ? '' : `${escapeHtml(i.cantidad)}x `}${escapeHtml(i.producto)}</span>
       <span class="item-price">Q${(i.cantidad * i.precio_unitario).toFixed(2)}</span>
     </div>
     ${i.especiales ? `<div class="muted item-especiales">↳ ${escapeHtml(i.especiales)}</div>` : ''}`).join('')

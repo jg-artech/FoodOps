@@ -24,6 +24,7 @@
               <th class="text-left px-3 py-2">Nombre</th>
               <th class="text-left px-3 py-2">Dirección</th>
               <th class="text-left px-3 py-2">Teléfono</th>
+              <th class="text-right px-3 py-2">Tope entrega</th>
               <th class="text-center px-3 py-2">Acciones</th>
             </tr>
           </thead>
@@ -33,6 +34,9 @@
               <td class="px-3 py-2 font-medium text-gray-800">{{ punto.nombre }}</td>
               <td class="px-3 py-2 text-gray-500">{{ punto.direccion || '—' }}</td>
               <td class="px-3 py-2 text-gray-500">{{ punto.telefono || '—' }}</td>
+              <td class="px-3 py-2 text-right text-gray-500">
+                {{ punto.tope_cargo_entrega != null ? formatQ(punto.tope_cargo_entrega) : '—' }}
+              </td>
               <td class="px-3 py-2 text-center whitespace-nowrap">
                 <button @click="editar(punto)" title="Editar" class="text-blue-500 hover:text-blue-700 px-1">✏️</button>
                 <button @click="eliminar(punto.id)" title="Eliminar" class="text-red-400 hover:text-red-600 px-1">🗑️</button>
@@ -74,6 +78,14 @@
               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
           </div>
 
+          <!-- Solo al editar: la tienda nueva arranca con Q200.00 (migración 014). -->
+          <div v-if="modalEditar">
+            <label class="text-xs text-gray-500 block mb-1">Tope del cargo de entrega sin autorización (Q)</label>
+            <input v-model="puntoForm.tope_cargo_entrega" type="text" inputmode="decimal" placeholder="200.00"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
+            <p class="text-xs text-gray-400 mt-1">Un cargo mayor necesita la autorización de un responsable.</p>
+          </div>
+
           <p v-if="modalError" class="text-red-500 text-xs">{{ modalError }}</p>
         </div>
 
@@ -93,6 +105,9 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/services/api'
+import { formatQ } from '@/utils/moneda.js'
+import { errorCargoEntrega } from '@/utils/cargoEntrega.js'
+import { normalizarError } from '@/services/impresion.js'
 
 const puntos = ref([])
 const loading = ref(true)
@@ -106,7 +121,7 @@ const guardando = ref(false)
 const puntoEditandoId = ref(null)
 
 function formularioVacio() {
-  return { nombre: '', direccion: '', telefono: '' }
+  return { nombre: '', direccion: '', telefono: '', tope_cargo_entrega: '' }
 }
 const puntoForm = reactive(formularioVacio())
 
@@ -136,6 +151,7 @@ function editar(punto) {
     nombre: punto.nombre,
     direccion: punto.direccion || '',
     telefono: punto.telefono || '',
+    tope_cargo_entrega: punto.tope_cargo_entrega ?? '',
   })
   modalAbierto.value = true
 }
@@ -151,17 +167,24 @@ async function guardar() {
     return
   }
 
+  const { tope_cargo_entrega: tope, ...datos } = puntoForm
+  const topeTexto = String(tope ?? '').trim()
+  if (modalEditar.value && (!topeTexto || errorCargoEntrega(topeTexto))) {
+    modalError.value = 'El tope debe ser un monto de Q0.00 en adelante, con hasta 2 decimales'
+    return
+  }
+
   guardando.value = true
   try {
     if (modalEditar.value) {
-      await api.patch(`/api/puntos-venta/${puntoEditandoId.value}`, { ...puntoForm })
+      await api.patch(`/api/puntos-venta/${puntoEditandoId.value}`, { ...datos, tope_cargo_entrega: topeTexto })
     } else {
-      await api.post('/api/puntos-venta', { ...puntoForm })
+      await api.post('/api/puntos-venta', datos)
     }
     cerrarModal()
     await cargarPuntos()
   } catch (e) {
-    modalError.value = e.response?.data?.detail || 'Error al guardar la tienda'
+    modalError.value = normalizarError(e).mensaje || 'Error al guardar la tienda'
   } finally {
     guardando.value = false
   }

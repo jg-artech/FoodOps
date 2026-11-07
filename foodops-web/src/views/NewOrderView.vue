@@ -118,7 +118,15 @@
             <span class="font-semibold text-gray-700">{{ formatQ(entry.cantidad * entry.precio) }}</span>
           </div>
         </div>
+        <template v-if="esDomicilio">
+          <hr class="my-3">
+          <CargoEntregaCampo :estado="cargoEntrega" :tope="topeCargo" :es-responsable="esResponsable" />
+        </template>
         <hr class="my-3">
+        <div v-if="montoEntrega > 0" class="flex justify-between text-sm text-gray-600 mb-1">
+          <span>Cargo de entrega</span>
+          <span class="font-semibold">{{ formatQ(montoEntrega) }}</span>
+        </div>
         <div class="flex justify-between font-bold text-lg">
           <span>TOTAL</span>
           <span class="text-orange-500">{{ formatQ(totalPrecio) }}</span>
@@ -148,7 +156,8 @@
         <button @click="step = 2" class="flex-1 border border-gray-300 text-gray-600 font-semibold py-3 rounded-xl hover:bg-gray-50">
           ← Editar
         </button>
-        <button @click="step = 4" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition">
+        <button @click="step = 4" :disabled="!!avisoCargo"
+          class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition disabled:opacity-40">
           Pagar →
         </button>
       </div>
@@ -319,6 +328,17 @@ import api from '@/services/api'
 import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
 import { useImpresionTicket } from '@/utils/impresionTicket.js'
 import DatosFacturaCampos from '@/components/DatosFacturaCampos.vue'
+import CargoEntregaCampo from '@/components/CargoEntregaCampo.vue'
+import { ROLES_CONFIRMAR_COBRO, tieneRol } from '@/permisos.js'
+import {
+  TIPO_ENTREGA,
+  autorizacionVigente,
+  cargoEntregaVacio,
+  errorCargoEntrega,
+  montoCargo,
+  montoTexto,
+  superaTope,
+} from '@/utils/cargoEntrega.js'
 import { normalizarError } from '@/services/impresion.js'
 import {
   CLIENTE_NOMBRE_MAX,
@@ -348,6 +368,10 @@ async function cargarRecetas() {
   }
 }
 onMounted(cargarRecetas)
+// /me trae el tope del cargo de entrega de la tienda; el usuario guardado en
+// localStorage puede ser de antes de que existiera. Si falla, el backend
+// igual exige la autorización (403) y entonces se pide.
+onMounted(() => { auth.fetchMe().catch(() => {}) })
 
 const step = ref(1)
 const loading = ref(false)
@@ -358,6 +382,11 @@ const ordenCreada = ref(null)
 const errorFacturaGuardada = ref('')
 // Interruptor "¿Requiere factura?" (apagado por defecto) y sus campos.
 const factura = reactive(datosFacturaVacios())
+// Cargo de entrega (solo domicilio) y, si supera el tope, la autorización
+// del responsable. Ver CargoEntregaCampo.vue y utils/cargoEntrega.js.
+const cargoEntrega = reactive(cargoEntregaVacio())
+const esResponsable = computed(() => tieneRol(auth.user, ROLES_CONFIRMAR_COBRO))
+const topeCargo = computed(() => auth.user?.tope_cargo_entrega ?? null)
 
 const menuItems = getMenu()
 const categorias = getCategorias()
@@ -379,11 +408,26 @@ const vuelto = computed(() => {
   return Number(form.dinero_recibido) - totalPrecio.value
 })
 
+const esDomicilio = computed(() => form.tipo === 'domicilio')
+const montoEntrega = computed(() => (esDomicilio.value ? montoCargo(cargoEntrega.monto) : 0))
+// Motivo por el que el cargo impide seguir: monto inválido o falta la
+// autorización del responsable.
+const avisoCargo = computed(() => {
+  if (!esDomicilio.value) return ''
+  const err = errorCargoEntrega(cargoEntrega.monto)
+  if (err) return err
+  if (superaTope(montoEntrega.value, topeCargo.value) && !esResponsable.value
+      && !autorizacionVigente(cargoEntrega.autorizacion, montoEntrega.value)) {
+    return 'El cargo de entrega supera el tope: falta la autorización de un responsable (en el Resumen)'
+  }
+  return ''
+})
+
 const errorNombre = computed(() => errorNombreCliente(form.cliente_nombre))
 const errorFactura = computed(() => errorDatosFactura(factura))
 // Primer motivo por el que no se puede confirmar (nombre, luego factura).
 // El de formato del NIT ya se muestra bajo el campo; junto al botón no se repite.
-const avisoCobro = computed(() => errorNombre.value || errorFactura.value)
+const avisoCobro = computed(() => avisoCargo.value || errorNombre.value || errorFactura.value)
 
 const canConfirmar = computed(() => {
   if (!form.metodo_pago) return false
@@ -466,7 +510,10 @@ const canStep1 = computed(() => {
 })
 
 const totalItems = computed(() => cart.value.reduce((acc, i) => acc + i.cantidad, 0))
-const totalPrecio = computed(() => cart.value.reduce((acc, i) => acc + i.cantidad * i.precio, 0))
+const totalProductos = computed(() => cart.value.reduce((acc, i) => acc + i.cantidad * i.precio, 0))
+// Igual que el backend: productos + cargo de entrega. El total que vale es
+// el que devuelve el servidor; este es para mostrar y calcular el vuelto.
+const totalPrecio = computed(() => Math.round((totalProductos.value + montoEntrega.value) * 100) / 100)
 
 // Orden de despliegue: el pollo siempre primero (por nombre del item o de su
 // grupo, p.ej. "Pollo Entero" o cualquier pieza del grupo "Pieza de Pollo"),
@@ -654,7 +701,30 @@ async function confirmarOrden() {
         especiales:      null,
       })),
     }
-    const { data } = await api.post('/api/ordenes/', payload)
+    // Cargo de entrega: nombre y cantidad los fija el servidor. Q0 = sin cargo.
+    if (montoEntrega.value > 0) {
+      payload.items.push({
+        producto:        'Cargo de entrega',
+        cantidad:        1,
+        precio_unitario: montoTexto(montoEntrega.value),
+        tipo:            TIPO_ENTREGA,
+      })
+      if (autorizacionVigente(cargoEntrega.autorizacion, montoEntrega.value)) {
+        payload.autorizacion_cargo = cargoEntrega.autorizacion.token
+      }
+    }
+    let data
+    try {
+      ({ data } = await api.post('/api/ordenes/', payload))
+    } catch (e) {
+      // 403 de la autorización (vencida, ya usada, otro monto, falta): se
+      // descarta la que había para que el responsable la vuelva a dar.
+      if (e.response?.status === 403 && montoEntrega.value > 0) {
+        cargoEntrega.autorizacion = null
+        if (!auth.user?.tope_cargo_entrega) auth.fetchMe().catch(() => {})
+      }
+      throw e
+    }
     ordenCreada.value = data
 
     // Datos de factura: solo si se pidió. Va después de crear la orden y un
@@ -736,6 +806,7 @@ function resetOrden() {
   cart.value = []
   Object.assign(form, { tipo: '', cliente_nombre: '', cliente_telefono: '', cliente_direccion: '', metodo_pago: '', notas_especiales: '', dinero_recibido: '' })
   Object.assign(factura, datosFacturaVacios())
+  Object.assign(cargoEntrega, cargoEntregaVacio())
   ordenCreada.value = null
   errorMsg.value = ''
   errorFacturaGuardada.value = ''

@@ -26,7 +26,7 @@
 
     <!-- Items con contenido de combos -->
     <div v-if="orden.items?.length" class="space-y-2">
-      <div v-for="item in orden.items" :key="item.producto">
+      <div v-for="item in productos" :key="item.producto">
         <p class="text-sm text-gray-800 font-semibold">
           <span class="text-orange-500 font-bold">{{ item.cantidad }}×</span> {{ item.producto }}
         </p>
@@ -34,6 +34,10 @@
           📦 {{ getContenido(item.producto) }}
         </p>
       </div>
+      <p v-if="cargo" class="text-sm text-gray-700 flex justify-between">
+        <span>🛵 Cargo de entrega</span>
+        <span class="font-semibold">{{ formatQ(cargo.subtotal ?? cargo.precio_unitario) }}</span>
+      </p>
     </div>
 
     <!-- Requerimientos especiales -->
@@ -68,6 +72,7 @@
 import { formatQ } from '@/utils/moneda.js'
 import { computed, reactive } from 'vue'
 import { getMenu } from '@/data/menu.js'
+import { cargoDe, itemsSinCargo } from '@/utils/cargoEntrega.js'
 import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
 import EstadoFactura from '@/components/EstadoFactura.vue'
 import HistorialImpresion from '@/components/HistorialImpresion.vue'
@@ -76,6 +81,9 @@ import { useImpresionTicket } from '@/utils/impresionTicket.js'
 const props = defineProps({
   orden: { type: Object, required: true },
 })
+
+const productos = computed(() => itemsSinCargo(props.orden.items))
+const cargo = computed(() => cargoDe(props.orden.items))
 
 const menuItems = getMenu()
 const impresion = reactive(useImpresionTicket())
