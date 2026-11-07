@@ -16,7 +16,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Solo quien tiene permiso de ROLES_ABRIR_CAJON confirma la recepción con POST /api/ordenes/{id}/confirmar-cobro. El efectivo entra al cuadre únicamente cuando la orden está COBRADA.
 - No existe efectivo sin orden: POST /api/ordenes/transacciones/ responde 400 si metodo_pago es efectivo y no hay orden_id.
 - El cierre de caja se bloquea si hay órdenes PENDIENTE_RECIBIR.
-- Un vendedor nunca abre el cajón ni cancela una orden COBRADA.
+- Un vendedor no abre el cajón ni cancela ninguna orden.
 - La venta nunca depende de que el agente o la impresora funcionen.
 - Un trabajo ABRIR_CAJON caduca a los 120 segundos y se crea una sola vez por orden.
 - Cancelar una orden requiere motivo y la contraseña personal de quien cancela. El intento fallido cuenta en el bloqueo del login.
@@ -38,7 +38,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Frontend: Vue 3, Vite, Pinia. El build sale de foodops-web/dist y se sube al servidor, donde nginx lo sirve.
 - Las direcciones del servidor, las IPs y los dominios de producción están en la documentación de despliegue, no aquí. No los copies a ningún archivo del repositorio.
 - No hagas SSH, curl ni consultas SQL contra producción, salvo que Jorge lo pida de forma explícita para esa tarea.
-- Migración más reciente: 012_impresion_agente.
+- Migración en local: 014. En producción: 012 hasta el despliegue.
 
 ## Reglas de trabajo
 - No hagas git push. Jorge lo hace a mano.
