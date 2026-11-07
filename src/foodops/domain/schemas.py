@@ -1,7 +1,7 @@
 """Pydantic schemas para validación"""
 
 from decimal import Decimal
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Literal, Optional
 
 import re
 
@@ -96,6 +96,21 @@ class PuntoVentaUpdate(BaseModel):
     nombre: Optional[NombreStr] = None
     direccion: Optional[DireccionStr] = None
     telefono: Optional[TelefonoStr] = None
+    # Tope del cargo de entrega sin autorización (migración 014). Mismo tipo
+    # que un precio: >= 0 y máximo 2 decimales.
+    tope_cargo_entrega: Optional[Precio] = None
+
+
+class AutorizarCargoEntregaRequest(BaseModel):
+    """Credenciales del RESPONSABLE (no del vendedor que tiene la sesión) y el
+    monto exacto que autoriza. extra="forbid": no se acepta punto_id; la
+    tienda es la del vendedor que pide la autorización."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    username: Annotated[str, Field(min_length=1, max_length=200)]
+    password: Annotated[str, Field(min_length=1, max_length=128)]
+    monto: Precio
 
 
 class LoginRequest(BaseModel):
@@ -120,8 +135,12 @@ class TokenResponse(BaseModel):
 class OrdenItemCreate(BaseModel):
     producto: Annotated[str, Field(max_length=200)]
     cantidad: Cantidad
+    # Precio: >= 0 y máximo 2 decimales (negativo o 3 decimales -> 422).
     precio_unitario: Precio
     especiales: Optional[RequerimientosStr] = None
+    # "entrega" = cargo de entrega: el monto va en precio_unitario; producto
+    # y cantidad los fija el servidor ("Cargo de entrega", 1).
+    tipo: Literal["producto", "entrega"] = "producto"
 
 
 class OrdenCreate(BaseModel):
@@ -137,6 +156,21 @@ class OrdenCreate(BaseModel):
     notas_especiales: Optional[RequerimientosStr] = None
     dinero_recibido: Optional[Precio] = None
     vuelto: Optional[Precio] = None
+    # Token de POST /api/auth/autorizar-cargo-entrega, solo si el cargo de
+    # entrega supera el tope de la tienda y quien crea la orden no es
+    # responsable.
+    autorizacion_cargo: Optional[Annotated[str, Field(max_length=2048)]] = None
+
+    @model_validator(mode="after")
+    def _cargo_entrega(self):
+        cargos = [i for i in self.items if i.tipo == "entrega"]
+        if len(cargos) > 1:
+            raise PydanticCustomError("cargo_entrega_duplicado", "Solo se admite un cargo de entrega por orden")
+        if cargos and not self.es_domicilio:
+            raise PydanticCustomError(
+                "cargo_entrega_sin_domicilio", "El cargo de entrega solo aplica a órdenes a domicilio"
+            )
+        return self
 
     @field_validator("cliente_nombre", mode="before")
     @classmethod

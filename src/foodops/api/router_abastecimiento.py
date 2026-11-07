@@ -479,7 +479,13 @@ def eliminar_regla_reabastecimiento(
 
 
 def _punto_venta_dict(p: PuntoVenta) -> dict:
-    return {"id": p.id, "nombre": p.nombre, "direccion": p.direccion, "telefono": p.telefono}
+    return {
+        "id": p.id,
+        "nombre": p.nombre,
+        "direccion": p.direccion,
+        "telefono": p.telefono,
+        "tope_cargo_entrega": str(p.tope_cargo_entrega) if p.tope_cargo_entrega is not None else None,
+    }
 
 
 @router.get("/puntos-venta")
@@ -574,6 +580,13 @@ def actualizar_punto_venta(
             if duplicado:
                 raise HTTPException(status_code=400, detail="Ya existe una tienda con ese nombre")
 
+        # Valor anterior para la auditoría (decisión 4: el cambio del tope del
+        # cargo de entrega queda con antes y después). Decimal -> texto: la
+        # columna detalle es JSON.
+        def _json(v):
+            return str(v) if isinstance(v, Decimal) else v
+
+        antes = {campo: _json(getattr(punto, campo)) for campo in cambios}
         for campo, valor in cambios.items():
             setattr(punto, campo, valor)
 
@@ -584,7 +597,11 @@ def actualizar_punto_venta(
             entidad_id=punto.id,
             usuario_id=current_user.user_id,
             punto_id=punto.id,
-            detalle=cambios,
+            detalle={
+                **{campo: _json(valor) for campo, valor in cambios.items()},
+                "antes": antes,
+                "despues": {campo: _json(valor) for campo, valor in cambios.items()},
+            },
         )
         session.commit()
         return _punto_venta_dict(punto)

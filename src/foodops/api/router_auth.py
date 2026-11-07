@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from foodops.core.audit import registrar_auditoria
 from foodops.core.auth import (
     ROLES_MULTI_TIENDA,
+    exigir_punto_propio,
     TokenData,
     create_access_token,
     get_current_user,
@@ -24,7 +25,14 @@ from foodops.core.auth import (
 )
 from foodops.core.config import settings
 from foodops.db.models import PuntoVenta, Usuario, UserRol
-from foodops.domain.schemas import LoginRequest, TokenResponse, UsuarioCreate, UsuarioUpdate
+from foodops.domain import autorizacion_cargo
+from foodops.domain.schemas import (
+    AutorizarCargoEntregaRequest,
+    LoginRequest,
+    TokenResponse,
+    UsuarioCreate,
+    UsuarioUpdate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +168,121 @@ def login(request: Request, body: LoginRequest):
         session.close()
 
 
+# Quien pide la autorización es quien va a crear la orden: los mismos roles
+# que POST /api/ordenes/ (_ROLES_OPERACION de router_ordenes.py).
+_ROLES_PIDEN_AUTORIZACION_CARGO = (
+    "tomador_orden", "cocinero", "repartidor", "resp_tienda",
+    "gerente_punto", "gerente_general", "admin",
+)
+
+
+@router.post("/autorizar-cargo-entrega")
+def autorizar_cargo_entrega(
+    request: Request,
+    body: AutorizarCargoEntregaRequest,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_PIDEN_AUTORIZACION_CARGO)),
+):
+    """Un responsable autoriza, en la pantalla del vendedor, un cargo de
+    entrega sobre el tope de la tienda. Devuelve un token de 5 minutos, de un
+    solo uso, atado a la tienda del vendedor, al monto exacto y al
+    responsable (ver domain/autorizacion_cargo.py).
+
+    Mismo bloqueo por intentos fallidos que /login, y sobre los mismos
+    contadores del responsable: equivocarse aquí también cuenta para su
+    bloqueo. Los errores son 403 (no 401) para no cerrar la sesión del
+    vendedor.
+    """
+    session = Session()
+    client_ip = request.client.host if request.client else None
+    punto_id = exigir_punto_propio(current_user)
+    _NO = HTTPException(status_code=403, detail="Usuario o contraseña del responsable incorrectos")
+    try:
+        responsable = session.execute(
+            select(Usuario).where(func.lower(Usuario.username) == body.username.lower())
+        ).scalars().first()
+
+        def fallo(motivo, usuario=None):
+            registrar_auditoria(
+                session,
+                accion="AUTORIZACION_CARGO_FALLIDA",
+                entidad="usuario",
+                entidad_id=usuario.id if usuario else None,
+                usuario_id=current_user.user_id,
+                punto_id=punto_id,
+                detalle={
+                    "motivo": motivo,
+                    "responsable": body.username,
+                    "monto": autorizacion_cargo.monto_texto(body.monto),
+                    "intentos": usuario.intentos_fallidos if usuario else None,
+                },
+                ip=client_ip,
+            )
+            session.commit()
+
+        if responsable is None:
+            fallo("usuario_no_existe")
+            raise _NO
+        if responsable.bloqueado_hasta and responsable.bloqueado_hasta > datetime.utcnow():
+            fallo("bloqueado", responsable)
+            raise HTTPException(
+                status_code=403,
+                detail="El usuario del responsable está bloqueado temporalmente por intentos fallidos",
+            )
+        if not verify_password(body.password, responsable.password_hash):
+            responsable.intentos_fallidos = (responsable.intentos_fallidos or 0) + 1
+            if responsable.intentos_fallidos >= _MAX_INTENTOS:
+                responsable.bloqueado_hasta = datetime.utcnow() + timedelta(minutes=_BLOQUEO_MINUTOS)
+            fallo("password_incorrecto", responsable)
+            raise _NO
+
+        # Contraseña correcta: se reinician los contadores, como en /login,
+        # antes de revisar si además tiene permiso para autorizar.
+        responsable.intentos_fallidos = 0
+        responsable.bloqueado_hasta = None
+        motivo = autorizacion_cargo.responsable_puede_autorizar(responsable, punto_id)
+        if motivo:
+            fallo(motivo, responsable)
+            raise HTTPException(
+                status_code=403,
+                detail="Ese usuario no puede autorizar cargos de entrega en esta tienda",
+            )
+
+        emitida = autorizacion_cargo.emitir(
+            responsable, punto_id=punto_id, monto=body.monto, solicitado_por=current_user.user_id
+        )
+        registrar_auditoria(
+            session,
+            accion="AUTORIZACION_CARGO_EMITIDA",
+            entidad="usuario",
+            entidad_id=responsable.id,
+            usuario_id=responsable.id,
+            punto_id=punto_id,
+            detalle={
+                "solicitado_por": current_user.user_id,
+                "monto": autorizacion_cargo.monto_texto(body.monto),
+                "jti": emitida["jti"],
+                "expira_at": str(emitida["expira_at"]),
+            },
+            ip=client_ip,
+        )
+        session.commit()
+        return {
+            "autorizacion_cargo": emitida["token"],
+            "expira_at": str(emitida["expira_at"]),
+            "monto": autorizacion_cargo.monto_texto(body.monto),
+            "autorizado_por": responsable.id,
+            "autorizado_por_nombre": responsable.nombre_completo or responsable.username,
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        session.rollback()
+        logger.exception("Error inesperado en autorizar-cargo-entrega")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+    finally:
+        session.close()
+
+
 @router.get("/me")
 def get_me(current_user: TokenData = Depends(get_current_user)):
     """Usuario actual. Añade el nombre de su tienda y si ve todas, que es lo
@@ -174,6 +297,10 @@ def get_me(current_user: TokenData = Depends(get_current_user)):
             "punto_nombre": punto.nombre if punto else None,
             "rol": current_user.rol,
             "ve_todas_las_tiendas": usuario_ve_todas_las_tiendas(current_user),
+            # Para avisar en el POS si un cargo de entrega pedirá autorización.
+            "tope_cargo_entrega": (
+                str(punto.tope_cargo_entrega) if punto and punto.tope_cargo_entrega is not None else None
+            ),
         }
     finally:
         session.close()

@@ -2,6 +2,7 @@
 import logging
 from collections import Counter
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,6 +22,10 @@ from foodops.core.auth import (
 )
 from foodops.core.config import settings
 from foodops.db.models import (
+    ITEM_TIPO_ENTREGA,
+    ITEM_TIPO_PRODUCTO,
+    NOMBRE_CARGO_ENTREGA,
+    TOPE_CARGO_ENTREGA_DEFAULT,
     DatosFacturacion,
     MetodoPago,
     Orden,
@@ -32,6 +37,7 @@ from foodops.db.models import (
     Usuario,
 )
 from foodops.db.models_stock import ProductoComponente, ProductoMenu, TransaccionComponente
+from foodops.domain import autorizacion_cargo
 from foodops.domain.impresion import encolar_cajon_por_cobro
 from foodops.domain.schemas import (
     ConfirmarCobroRequest,
@@ -160,6 +166,8 @@ def _orden_dict(
                 "precio_unitario": float(i.precio_unitario),
                 "subtotal": float(i.subtotal),
                 "especiales": i.especiales,
+                # "producto" | "entrega" (cargo de entrega, migración 014).
+                "tipo": i.tipo or ITEM_TIPO_PRODUCTO,
             }
             for i in items
         ],
@@ -178,10 +186,37 @@ def crear_orden(
         # La tienda va en el número: con 3 tiendas vendiendo a la vez, un
         # sello de segundos no basta para que el número del ticket sea único.
         numero_orden = f"ORD-{punto_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
-        # Total calculated server-side from item quantities; subtotals are recalculated too
-        total = sum(
-            item.cantidad * float(item.precio_unitario) for item in orden.items
-        ) if orden.items else 0.0
+
+        # Cargo de entrega (a lo sumo uno, solo en domicilio: lo valida
+        # OrdenCreate). Nombre y cantidad los fija el servidor; el monto va en
+        # precio_unitario.
+        cargo = next((i for i in orden.items if i.tipo == ITEM_TIPO_ENTREGA), None)
+        tope = None
+        requiere_autorizacion = False
+        if cargo is not None:
+            cargo.producto = NOMBRE_CARGO_ENTREGA
+            cargo.cantidad = 1
+            punto_tope = session.get(PuntoVenta, punto_id)
+            tope = Decimal(str(
+                punto_tope.tope_cargo_entrega
+                if punto_tope is not None and punto_tope.tope_cargo_entrega is not None
+                else TOPE_CARGO_ENTREGA_DEFAULT
+            ))
+            requiere_autorizacion = (
+                cargo.precio_unitario > tope and current_user.rol not in _ROLES_CONFIRMAR_COBRO
+            )
+            if requiere_autorizacion and not orden.autorizacion_cargo:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"El cargo de entrega supera el tope de la tienda (Q{tope}); requiere autorización de un responsable",
+                )
+
+        # Total calculado en el servidor (incluye el cargo de entrega); el
+        # cliente no manda total. Decimal para no acumular error de float.
+        total = float(sum(
+            (Decimal(item.cantidad) * item.precio_unitario for item in orden.items),
+            Decimal("0"),
+        ))
 
         nueva_orden = Orden(
             punto_id=punto_id,
@@ -219,9 +254,49 @@ def crear_orden(
                 precio_unitario=float(item.precio_unitario),
                 subtotal=item.cantidad * float(item.precio_unitario),
                 especiales=item.especiales,
+                tipo=item.tipo,
             )
             session.add(orden_item)
             items_creados.append(orden_item)
+
+        if cargo is not None:
+            # Sobre el tope: el autorizador es quien crea la orden si ya es
+            # responsable, o el del token (validado y consumido aquí, en la
+            # misma transacción que la orden: si algo falla, no se gasta).
+            autorizado_por = None
+            if cargo.precio_unitario > tope:
+                if requiere_autorizacion:
+                    autorizado_por = autorizacion_cargo.validar_y_consumir(
+                        session,
+                        orden.autorizacion_cargo,
+                        punto_id=punto_id,
+                        monto=cargo.precio_unitario,
+                        usuario_id=current_user.user_id,
+                        orden_id=nueva_orden.id,
+                    )
+                else:
+                    autorizado_por = current_user.user_id
+            # TODO(cargo de entrega): cuando exista la edición de órdenes,
+            # auditar también el cambio y la eliminación del cargo, con el
+            # mismo formato antes/después.
+            # TODO(cargo de entrega, sin decidir): quién recibe el dinero del
+            # cargo (el repartidor o el local). No cambia el flujo de cobro.
+            registrar_auditoria(
+                session,
+                accion="CARGO_ENTREGA_REGISTRADO",
+                entidad="orden",
+                entidad_id=nueva_orden.id,
+                usuario_id=current_user.user_id,
+                punto_id=punto_id,
+                detalle={
+                    "numero_orden": numero_orden,
+                    "antes": {"monto": None},
+                    "despues": {"monto": autorizacion_cargo.monto_texto(cargo.precio_unitario)},
+                    "tope_vigente": autorizacion_cargo.monto_texto(tope),
+                    "sobre_tope": cargo.precio_unitario > tope,
+                    "autorizado_por": autorizado_por,
+                },
+            )
 
         registrar_auditoria(
             session,
@@ -622,6 +697,9 @@ def reporte_cierre(
         for o in ordenes:
             items = session.execute(select(OrdenItem).where(OrdenItem.orden_id == o.id)).scalars().all()
             for item in items:
+                # El cargo de entrega no es un producto vendido.
+                if item.tipo == ITEM_TIPO_ENTREGA:
+                    continue
                 producto_counter[item.producto] += item.cantidad
 
         total_efectivo_recibido = sum(
@@ -767,12 +845,28 @@ def crear_transaccion(
 
         # orden_id viene del cliente: sin esto se podría colgar una venta de
         # esta tienda de una orden de otra.
+        precio_venta = req.precio_venta
+        costo_total = req.costo_total
+        margen_bruto = req.margen_bruto
+        margen_pct = req.margen_pct
         if req.orden_id is not None:
             orden = session.get(Orden, req.orden_id)
             if orden is None:
                 raise HTTPException(status_code=404, detail="Orden no encontrada")
             if orden.punto_id != punto_id:
                 raise HTTPException(status_code=403, detail="Esa orden pertenece a otra tienda")
+            # El cuadre de caja suma precio_venta (_calcular_efectivo_esperado
+            # en router_caja.py): con orden, el monto es el total que calculó
+            # el servidor al crearla (incluye el cargo de entrega), nunca el
+            # que manda el cliente. Costo y margen también se calculan aquí,
+            # desde los ítems.
+            # TODO(costos): el costo unitario sigue llegando del navegador
+            # (ConfigView lo guarda en localStorage); la base no tiene costos
+            # por producto. El cargo de entrega no va en los ítems: costo 0.
+            precio_venta = float(orden.total)
+            costo_total = round(sum(i.costo_unitario * i.cantidad for i in req.items), 2)
+            margen_bruto = round(precio_venta - costo_total, 2)
+            margen_pct = round(margen_bruto / precio_venta * 100) if precio_venta > 0 else 0
 
         t = TransaccionVenta(
             punto_id=punto_id,
@@ -783,10 +877,10 @@ def crear_transaccion(
             cliente_telefono=req.cliente_telefono,
             cliente_direccion=req.cliente_direccion,
             tipo_cliente=req.tipo_cliente,
-            precio_venta=req.precio_venta,
-            costo_total=req.costo_total,
-            margen_bruto=req.margen_bruto,
-            margen_pct=req.margen_pct,
+            precio_venta=precio_venta,
+            costo_total=costo_total,
+            margen_bruto=margen_bruto,
+            margen_pct=margen_pct,
             metodo_pago=req.metodo_pago,
             items_json=[item.model_dump() for item in req.items],
             requerimientos_especiales=req.requerimientos_especiales,
@@ -804,7 +898,12 @@ def crear_transaccion(
             entidad_id=t.id,
             usuario_id=current_user.user_id,
             punto_id=current_user.punto_id,
-            detalle={"metodo_pago": req.metodo_pago, "total": req.precio_venta},
+            detalle={
+                "metodo_pago": req.metodo_pago,
+                "total": precio_venta,
+                # Lo que mandó el cliente, si difiere del total del servidor.
+                "precio_venta_cliente": req.precio_venta if req.precio_venta != precio_venta else None,
+            },
         )
         session.commit()
         return {"id_transaccion": t.id, "status": "creada"}
