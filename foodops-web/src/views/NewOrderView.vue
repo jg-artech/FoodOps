@@ -215,7 +215,7 @@
       <DatosFacturaCampos :datos="factura" class="mb-4" />
 
       <!-- Por qué el botón está deshabilitado, en el mismo patrón de errores -->
-      <p v-if="avisoCobro" class="text-red-500 text-sm mb-3">{{ avisoCobro }}</p>
+      <p v-if="avisoCobro && avisoCobro !== MSG_NIT_INVALIDO" class="text-red-500 text-sm mb-3">{{ avisoCobro }}</p>
       <p v-if="errorMsg" class="text-red-500 text-sm mb-3">{{ errorMsg }}</p>
 
       <div class="flex gap-3">
@@ -322,6 +322,7 @@ import DatosFacturaCampos from '@/components/DatosFacturaCampos.vue'
 import { normalizarError } from '@/services/impresion.js'
 import {
   CLIENTE_NOMBRE_MAX,
+  MSG_NIT_INVALIDO,
   bodyDatosFactura,
   datosFacturaVacios,
   errorDatosFactura,
@@ -381,6 +382,7 @@ const vuelto = computed(() => {
 const errorNombre = computed(() => errorNombreCliente(form.cliente_nombre))
 const errorFactura = computed(() => errorDatosFactura(factura))
 // Primer motivo por el que no se puede confirmar (nombre, luego factura).
+// El de formato del NIT ya se muestra bajo el campo; junto al botón no se repite.
 const avisoCobro = computed(() => errorNombre.value || errorFactura.value)
 
 const canConfirmar = computed(() => {
