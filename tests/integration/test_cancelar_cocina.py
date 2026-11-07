@@ -380,3 +380,129 @@ def test_cancelada_no_se_reactiva_por_este_endpoint(api, tienda, S):
     assert _cancelar(api, tienda["resp"], oid).status_code == 200
     assert _cancelar(api, tienda["resp"], oid).status_code == 409
     assert _estado(S, oid)[0] == OrdenEstado.CANCELADO
+
+
+# =============================================================================
+# POST /api/ordenes/{id}/cancelar (Órdenes del POS): mismos roles, motivo y
+# contraseña; a diferencia de cocina, SÍ cancela órdenes cobradas y deja la
+# devolución registrada como pendiente.
+# =============================================================================
+
+
+def _cancelar_pos(api, usuario, orden_id, *, motivo=MOTIVO, password=CLAVE, body=None):
+    if body is None:
+        body = {"motivo": motivo, "password": password}
+    return api.post(f"/api/ordenes/{orden_id}/cancelar", json=body, headers=_auth(usuario))
+
+
+@pytest.mark.parametrize("rol", ["cocinero", "vendedor", "repartidor"])
+def test_pos_rol_no_permitido_da_403(api, tienda, S, rol):
+    oid = _orden(S, tienda["id"])
+    assert _cancelar_pos(api, tienda[rol], oid).status_code == 403
+    assert _estado(S, oid)[0] == OrdenEstado.PENDIENTE
+
+
+@pytest.mark.parametrize("motivo", [None, "abcd", "   "], ids=["ausente", "corto", "espacios"])
+def test_pos_motivo_obligatorio_tambien_en_cobradas(api, tienda, S, motivo):
+    oid = _orden(S, tienda["id"], estado_cobro="cobrada", metodo=MetodoPago.TARJETA)
+    body = {"password": CLAVE} if motivo is None else {"motivo": motivo, "password": CLAVE}
+    r = _cancelar_pos(api, tienda["resp"], oid, body=body)
+    assert r.status_code == 422
+    assert CLAVE not in r.text
+    assert _estado(S, oid)[0] == OrdenEstado.PENDIENTE
+
+
+def test_pos_contrasena_incorrecta_da_401_y_no_cancela(api, tienda, S):
+    oid = _orden(S, tienda["id"], estado_cobro="cobrada")
+    r = _cancelar_pos(api, tienda["resp"], oid, password="mala")
+    assert r.status_code == 401
+    assert r.json()["detail"] == "Contraseña incorrecta"
+    assert _estado(S, oid) == (OrdenEstado.PENDIENTE, "cobrada")
+    rechazo = [a for a in _auditoria(S, oid) if a.accion == "CANCELACION_ORDEN_RECHAZADA"]
+    assert len(rechazo) == 1 and rechazo[0].detalle["origen"] == "pos"
+
+
+def test_pos_cuenta_en_el_mismo_bloqueo(api, tienda, S):
+    resp = tienda["resp"]
+    oid = _orden(S, tienda["id"])
+    for _ in range(_MAX_INTENTOS):
+        assert _cancelar_pos(api, resp, oid, password="mala").status_code == 401
+    assert _usuario_db(S, resp["user_id"])[1] is not None
+    assert _cancelar_pos(api, resp, oid).status_code == 401
+    assert _cancelar(api, resp, oid).status_code == 401  # también bloqueado en cocina
+
+
+def test_pos_ya_cancelada_da_409(api, tienda, S):
+    oid = _orden(S, tienda["id"], estado=OrdenEstado.CANCELADO)
+    assert _cancelar_pos(api, tienda["resp"], oid).status_code == 409
+
+
+def test_pos_tienda_ajena_da_403(api, tienda, S, empresa_id):
+    s = S()
+    otra = PuntoVenta(empresa_id=empresa_id, nombre=f"Otra POS {uuid.uuid4().hex[:6]}")
+    s.add(otra)
+    s.commit()
+    otra_id = otra.id
+    s.close()
+    assert _cancelar_pos(api, tienda["resp"], _orden(S, otra_id)).status_code == 403
+
+
+def test_pos_cancela_orden_pendiente_sin_devolucion(api, tienda, S):
+    oid = _orden(S, tienda["id"])
+    r = _cancelar_pos(api, tienda["gerente_punto"], oid)
+    assert r.status_code == 200, r.text
+    assert r.json()["devolucion_pendiente"] is False
+    log = [a for a in _auditoria(S, oid) if a.accion == "ORDEN_CANCELADA"][0]
+    assert log.detalle["origen"] == "pos"
+    assert log.detalle["motivo"] == MOTIVO
+    assert "devolucion_pendiente" not in log.detalle
+
+
+@pytest.mark.parametrize("metodo", [MetodoPago.EFECTIVO, MetodoPago.TARJETA, MetodoPago.TRANSFERENCIA])
+def test_pos_cancela_orden_cobrada_con_motivo_y_devolucion_pendiente(api, tienda, S, metodo):
+    oid = _orden(S, tienda["id"], estado_cobro="cobrada", metodo=metodo, estado=OrdenEstado.PREPARANDO)
+    r = _cancelar_pos(api, tienda["resp"], oid, motivo="  Cliente pidió devolución  ")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"id": oid, "numero_orden": r.json()["numero_orden"], "estado": "cancelado",
+                        "devolucion_pendiente": True}
+    assert _estado(S, oid) == (OrdenEstado.CANCELADO, "cobrada")
+    logs = [a for a in _auditoria(S, oid) if a.accion == "ORDEN_CANCELADA"]
+    assert len(logs) == 1
+    d = logs[0].detalle
+    assert d["motivo"] == "Cliente pidió devolución"
+    assert d["estado_previo"] == "preparando"
+    assert d["estado_cobro_previo"] == "cobrada"
+    assert d["monto_cobrado"] == 50.0
+    assert d["metodo_pago"] == metodo.value
+    assert d["devolucion_pendiente"] is True
+    assert CLAVE not in json.dumps(d, ensure_ascii=False)
+
+
+def test_cocina_sigue_sin_cancelar_cobradas_y_remite_al_pos(api, tienda, S):
+    oid = _orden(S, tienda["id"], estado_cobro="cobrada", metodo=MetodoPago.TARJETA)
+    r = _cancelar(api, tienda["resp"], oid)
+    assert r.status_code == 409
+    assert "Órdenes" in r.json()["detail"]
+
+
+def test_pos_cobrada_en_efectivo_cancelada_sale_del_cuadre(api, tienda, S):
+    """Una venta en efectivo COBRADA y luego cancelada deja de contar en el
+    efectivo esperado (el dinero se devuelve al cliente)."""
+    from datetime import date
+
+    from foodops.api.router_caja import _calcular_efectivo_esperado
+    from foodops.db.models import TransaccionVenta
+    from foodops.db.models_caja import CajaDiaria
+
+    oid = _orden(S, tienda["id"], estado_cobro="cobrada")
+    s = S()
+    s.add(TransaccionVenta(punto_id=tienda["id"], orden_id=oid, metodo_pago="efectivo", precio_venta=50))
+    caja = CajaDiaria(punto_id=tienda["id"], fecha=date.today(), fondo_inicial=0, estado="abierta",
+                      abierta_por=tienda["resp"]["user_id"])
+    s.add(caja)
+    s.commit()
+    assert _calcular_efectivo_esperado(s, caja) == 50
+    assert _cancelar_pos(api, tienda["resp"], oid).status_code == 200
+    s.expire_all()
+    assert _calcular_efectivo_esperado(s, caja) == 0
+    s.close()
