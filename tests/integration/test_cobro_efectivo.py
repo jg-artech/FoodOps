@@ -128,6 +128,8 @@ def test_orden_en_efectivo_nace_pendiente_recibir(api, datos):
     r = api.post(
         "/api/ordenes/",
         json={
+            # cliente_nombre explícito: desde la fase 1 de facturación es obligatorio al cobrar (422 sin él).
+            "cliente_nombre": "Cliente prueba",
             "metodo_pago": "efectivo",
             "dinero_recibido": 100,
             "vuelto": 0,
@@ -149,6 +151,8 @@ def test_orden_con_tarjeta_nace_cobrada(api, datos):
     r = api.post(
         "/api/ordenes/",
         json={
+            # cliente_nombre explícito: desde la fase 1 de facturación es obligatorio al cobrar (422 sin él).
+            "cliente_nombre": "Cliente prueba",
             "metodo_pago": "tarjeta",
             "items": [{"producto": "1/4 Pollo", "cantidad": 1, "precio_unitario": 100}],
         },
@@ -458,8 +462,12 @@ def tienda_hotfix(engine):
     yield out
 
 
-def _payload_transaccion(metodo_pago, *, orden_id=None, precio_venta=777):
+def _payload_transaccion(metodo_pago, *, orden_id=None, precio_venta=777, cliente_nombre="Cliente prueba"):
+    # cliente_nombre por defecto: desde la fase 1 de facturación es
+    # obligatorio en tarjeta/transferencia sin orden_id (422 sin él). En
+    # efectivo sin orden el 400 de siempre sigue saliendo primero.
     return {
+        "cliente_nombre": cliente_nombre,
         "orden_id": orden_id,
         "metodo_pago": metodo_pago,
         "precio_venta": precio_venta,

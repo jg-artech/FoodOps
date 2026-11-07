@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import create_engine, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
@@ -20,6 +21,7 @@ from foodops.core.auth import (
 )
 from foodops.core.config import settings
 from foodops.db.models import (
+    DatosFacturacion,
     MetodoPago,
     Orden,
     OrdenEstado,
@@ -31,7 +33,12 @@ from foodops.db.models import (
 )
 from foodops.db.models_stock import ProductoComponente, ProductoMenu, TransaccionComponente
 from foodops.domain.impresion import encolar_cajon_por_cobro
-from foodops.domain.schemas import ConfirmarCobroRequest, CrearTransaccionRequest, OrdenCreate
+from foodops.domain.schemas import (
+    ConfirmarCobroRequest,
+    CrearTransaccionRequest,
+    DatosFacturaRequest,
+    OrdenCreate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +75,55 @@ ESTADO_COBRO_COBRADA = "cobrada"
 # un cambio de permisos de impresión no altere quién confirma cobros.
 _ROLES_CONFIRMAR_COBRO = ("resp_tienda", "gerente_punto", "gerente_general", "admin")
 
+# Pueden capturar datos de factura: cualquier vendedor (mismo conjunto que
+# ROLES_IMPRESION_TICKET de router_impresion.py) más quien confirma cobros.
+# No se importa de router_impresion porque ese módulo importa de este; una
+# prueba verifica que coincidan. tomador_orden solo crea la fila (al cobrar):
+# si ya existe, editarla es exclusivo de _ROLES_CONFIRMAR_COBRO.
+_ROLES_CAPTURA_FACTURA = ("tomador_orden",) + _ROLES_CONFIRMAR_COBRO
 
-def _orden_dict(o, items, tomada_por_nombre=None, punto_nombre=None, confirmado_por_nombre=None):
+_CAMPOS_FISCALES = ("requiere_factura", "nit", "nombre_fiscal", "direccion_fiscal")
+
+
+def _enmascarar_nit(nit):
+    """Para audit_log: solo los últimos 3 caracteres."""
+    if not nit:
+        return nit
+    return "***" + nit[-3:]
+
+
+def _datos_factura_dict(df):
+    if df is None:
+        return None
+    return {
+        "requiere_factura": df.requiere_factura,
+        "nit": df.nit,
+        "nombre_fiscal": df.nombre_fiscal,
+        "direccion_fiscal": df.direccion_fiscal,
+        "factura_generada": df.factura_generada,
+        "factura_generada_por": df.factura_generada_por,
+        "factura_generada_at": str(df.factura_generada_at) if df.factura_generada_at else None,
+        "capturado_por": df.capturado_por,
+        "capturado_at": str(df.capturado_at) if df.capturado_at else None,
+        "actualizado_por": df.actualizado_por,
+        "actualizado_at": str(df.actualizado_at) if df.actualizado_at else None,
+    }
+
+
+def _datos_factura_por_orden(session, orden_ids):
+    """Una sola consulta para todas las órdenes de un listado."""
+    if not orden_ids:
+        return {}
+    filas = session.execute(
+        select(DatosFacturacion).where(DatosFacturacion.orden_id.in_(orden_ids))
+    ).scalars().all()
+    return {f.orden_id: _datos_factura_dict(f) for f in filas}
+
+
+def _orden_dict(
+    o, items, tomada_por_nombre=None, punto_nombre=None, confirmado_por_nombre=None,
+    datos_factura=None,
+):
     return {
         "id": o.id,
         "numero_orden": o.numero_orden,
@@ -96,6 +150,9 @@ def _orden_dict(o, items, tomada_por_nombre=None, punto_nombre=None, confirmado_
         "confirmado_por": o.confirmado_por,
         "confirmado_por_nombre": confirmado_por_nombre,
         "confirmado_at": str(o.confirmado_at) if o.confirmado_at else None,
+        # Objeto de _datos_factura_dict, o None si la orden no tiene fila
+        # (equivale a requiere_factura = false).
+        "datos_factura": datos_factura,
         "items": [
             {
                 "producto": i.producto,
@@ -246,6 +303,8 @@ def listar_ordenes(
             ).scalars().all()
             nombres_por_usuario = {u.id: (u.nombre_completo or u.username) for u in usuarios}
 
+        datos_factura = _datos_factura_por_orden(session, [o.id for o in ordenes])
+
         result = []
         for o in ordenes:
             items = session.execute(
@@ -255,6 +314,7 @@ def listar_ordenes(
                 o, items,
                 tomada_por_nombre=nombres_por_usuario.get(o.tomada_por),
                 punto_nombre=nombres_punto.get(o.punto_id),
+                datos_factura=datos_factura.get(o.id),
             ))
         return result
     finally:
@@ -381,8 +441,147 @@ def confirmar_cobro_efectivo(
             items,
             punto_nombre=punto.nombre if punto else None,
             confirmado_por_nombre=nombre_confirmador,
+            datos_factura=_datos_factura_por_orden(session, [orden.id]).get(orden.id),
         )
     except HTTPException:
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+def _cargar_orden_para_factura(session, orden_id: int, current_user: TokenData):
+    """Orden bloqueada (FOR UPDATE) + control de tienda. La fila de datos
+    fiscales también se bloquea, para que "marcar generada" y una edición
+    simultánea no se crucen."""
+    orden = session.get(Orden, orden_id, with_for_update=True)
+    if not orden:
+        raise HTTPException(status_code=404, detail="Orden no encontrada")
+    exigir_acceso_a_punto(current_user, orden.punto_id)
+    df = session.execute(
+        select(DatosFacturacion).where(DatosFacturacion.orden_id == orden_id).with_for_update()
+    ).scalar_one_or_none()
+    return orden, df
+
+
+@router.put("/{orden_id}/datos-factura")
+def guardar_datos_factura(
+    orden_id: int,
+    body: DatosFacturaRequest,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_CAPTURA_FACTURA)),
+):
+    """Captura o edita los datos fiscales de una orden. No emite factura.
+
+    - Vendedor (tomador_orden): solo crea la fila, al cobrar. Si ya existe, 403.
+    - Cobrador (_ROLES_CONFIRMAR_COBRO): edita mientras la factura no esté
+      marcada como generada.
+    - 409 para cualquier rol si la factura ya se generó o la orden está
+      cancelada.
+    """
+    session = Session()
+    try:
+        orden, df = _cargar_orden_para_factura(session, orden_id, current_user)
+        if orden.estado == OrdenEstado.CANCELADO:
+            raise HTTPException(status_code=409, detail="La orden está cancelada; no se pueden cambiar sus datos de factura")
+        if df is not None and df.factura_generada:
+            raise HTTPException(status_code=409, detail="La factura ya fue generada; los datos fiscales están bloqueados")
+        if df is not None and current_user.rol not in _ROLES_CONFIRMAR_COBRO:
+            raise HTTPException(
+                status_code=403,
+                detail="Los datos de factura ya fueron capturados; solo un responsable puede editarlos",
+            )
+
+        nuevos = {c: getattr(body, c) for c in _CAMPOS_FISCALES}
+        ahora = datetime.utcnow()
+        if df is None:
+            antes_vals = {c: None for c in _CAMPOS_FISCALES}
+            df = DatosFacturacion(
+                orden_id=orden.id,
+                capturado_por=current_user.user_id,
+                capturado_at=ahora,
+                **nuevos,
+            )
+            session.add(df)
+            cambiados = [c for c in _CAMPOS_FISCALES if nuevos[c] is not None]
+        else:
+            antes_vals = {c: getattr(df, c) for c in _CAMPOS_FISCALES}
+            cambiados = [c for c in _CAMPOS_FISCALES if nuevos[c] != antes_vals[c]]
+            if cambiados:
+                for c in cambiados:
+                    setattr(df, c, nuevos[c])
+                df.actualizado_por = current_user.user_id
+                df.actualizado_at = ahora
+
+        if cambiados:
+            def _para_log(campo, valor):
+                return _enmascarar_nit(valor) if campo == "nit" else valor
+
+            registrar_auditoria(
+                session,
+                accion="DATOS_FACTURA_ACTUALIZADOS",
+                entidad="orden",
+                entidad_id=orden.id,
+                usuario_id=current_user.user_id,
+                punto_id=orden.punto_id,
+                detalle={
+                    "numero_orden": orden.numero_orden,
+                    "antes": {c: _para_log(c, antes_vals[c]) for c in cambiados},
+                    "despues": {c: _para_log(c, nuevos[c]) for c in cambiados},
+                },
+            )
+        session.commit()
+        return _datos_factura_dict(df)
+    except HTTPException:
+        session.rollback()
+        raise
+    except IntegrityError:
+        # Dos capturas simultáneas de la misma orden: gana la primera.
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Los datos de factura de esta orden ya fueron capturados")
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+@router.post("/{orden_id}/datos-factura/marcar-generada")
+def marcar_factura_generada(
+    orden_id: int,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_CONFIRMAR_COBRO)),
+):
+    """El cobrador indica que ya hizo la factura (manual). No guarda número
+    de factura. Después de esto los datos fiscales quedan bloqueados."""
+    session = Session()
+    try:
+        orden, df = _cargar_orden_para_factura(session, orden_id, current_user)
+        if orden.estado == OrdenEstado.CANCELADO:
+            raise HTTPException(status_code=409, detail="La orden está cancelada")
+        if orden.estado_cobro != ESTADO_COBRO_COBRADA:
+            raise HTTPException(status_code=409, detail="La orden todavía no está cobrada")
+        if df is None or not df.requiere_factura:
+            raise HTTPException(status_code=422, detail="Esta orden no requiere factura")
+        if df.factura_generada:
+            raise HTTPException(status_code=409, detail="La factura ya estaba marcada como generada")
+
+        df.factura_generada = True
+        df.factura_generada_por = current_user.user_id
+        df.factura_generada_at = datetime.utcnow()
+        registrar_auditoria(
+            session,
+            accion="FACTURA_MARCADA_GENERADA",
+            entidad="orden",
+            entidad_id=orden.id,
+            usuario_id=current_user.user_id,
+            punto_id=orden.punto_id,
+            detalle={"numero_orden": orden.numero_orden, "nit": _enmascarar_nit(df.nit)},
+        )
+        session.commit()
+        return _datos_factura_dict(df)
+    except HTTPException:
+        session.rollback()
         raise
     except Exception as e:
         session.rollback()

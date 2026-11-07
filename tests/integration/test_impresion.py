@@ -536,7 +536,9 @@ def test_agente_apagado_venta_guardada_y_trabajos_pendientes(api, ctx, S, token_
     _vaciar_cola(api, token_agente)
     r = api.post(
         "/api/ordenes/",
-        json={"metodo_pago": "efectivo", "dinero_recibido": 100, "vuelto": 15,
+        # cliente_nombre explícito: desde la fase 1 de facturación es obligatorio al cobrar (422 sin él).
+        json={"cliente_nombre": "Cliente prueba",
+              "metodo_pago": "efectivo", "dinero_recibido": 100, "vuelto": 15,
               "items": [{"producto": "1/4 Pollo", "cantidad": 1, "precio_unitario": 85}]},
         headers=_auth(ctx["tomador_agente"]),
     )

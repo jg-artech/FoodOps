@@ -212,6 +212,8 @@ def test_la_orden_toma_la_tienda_del_token_y_no_la_del_body(api, datos):
     r = api.post(
         "/api/ordenes/",
         json={
+            # cliente_nombre explícito: desde la fase 1 de facturación es obligatorio al cobrar (422 sin él).
+            "cliente_nombre": "Cliente prueba",
             "metodo_pago": "efectivo",
             "punto_id": datos["jordan"],  # intento de inyectar otra tienda
             "items": [{"producto": "1/4 Pollo", "cantidad": 1, "precio_unitario": 25}],

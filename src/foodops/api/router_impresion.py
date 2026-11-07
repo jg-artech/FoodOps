@@ -160,16 +160,17 @@ def _payload_ticket(session, orden: Orden, punto: PuntoVenta) -> dict:
     items = session.execute(
         select(OrdenItem).where(OrdenItem.orden_id == orden.id).order_by(OrdenItem.id)
     ).scalars().all()
-    return {
-        "version": 1,
-        "orden": _orden_dict(
-            orden,
-            items,
-            tomada_por_nombre=_nombre_usuario(session, orden.tomada_por),
-            punto_nombre=punto.nombre,
-            confirmado_por_nombre=_nombre_usuario(session, orden.confirmado_por),
-        ),
-    }
+    orden_d = _orden_dict(
+        orden,
+        items,
+        tomada_por_nombre=_nombre_usuario(session, orden.tomada_por),
+        punto_nombre=punto.nombre,
+        confirmado_por_nombre=_nombre_usuario(session, orden.confirmado_por),
+    )
+    # Los datos fiscales (NIT) no van al ticket ni se guardan en la cola de
+    # impresión: el ticket no es factura.
+    orden_d.pop("datos_factura", None)
+    return {"version": 1, "orden": orden_d}
 
 
 def _cajon_caducado(t: TrabajoImpresion, ahora: datetime) -> bool:
