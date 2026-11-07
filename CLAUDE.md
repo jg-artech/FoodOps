@@ -38,7 +38,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Frontend: Vue 3, Vite, Pinia. El build sale de foodops-web/dist y se sube al servidor, donde nginx lo sirve.
 - Las direcciones del servidor, las IPs y los dominios de producción están en la documentación de despliegue, no aquí. No los copies a ningún archivo del repositorio.
 - No hagas SSH, curl ni consultas SQL contra producción, salvo que Jorge lo pida de forma explícita para esa tarea.
-- Migración en local: 014. En producción: 012 hasta el despliegue.
+- Migración más reciente: 014_cargo_entrega (local y producción).
 
 ## Reglas de trabajo
 - No hagas git push. Jorge lo hace a mano.
@@ -55,7 +55,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 ## Estado al cierre de la última sesión
 
 **Producción**
-- Backend y frontend de impresión desplegados. Commit en producción: backend 755d717, frontend e3981c4 (2026-11-06).
+- Commit en producción: backend y frontend 4bff6c2 (2026-11-07), con las migraciones 013 y 014. Validado en producción.
 - Montos en quetzales: el frontend formatea todos los importes con formatQ() de foodops-web/src/utils/moneda.js (Q1,234.50, -Q5.00). No usar "$", toFixed a mano ni Intl con GTQ. El ticket (utils/ticket.js) mantiene su propio formato con Q.
 - Tras desplegar frontend, purgar Cloudflare; los navegadores con la PWA abierta pueden necesitar cerrar y volver a abrir.
 - Cobro en efectivo verificado: el vendedor registra, el responsable confirma, el cuadre cuenta solo COBRADA.
@@ -64,14 +64,13 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Local Centro: vendedor y responsable creados; flujo de venta en efectivo probado de punta a punta.
 - Impresora y cajón de Centro: pendientes de activar por SQL tras la prueba física (ver docs/RUNBOOK_ACTIVAR_CENTRO.md). Jordán y Auxiliar siguen desactivadas.
 
-**Local, sin desplegar (2026-11-07)**
-- Facturación fase 1 (nombre obligatorio y datos fiscales), cargo de entrega con tope por tienda y cancelación con motivo y contraseña en Órdenes y Cocina.
-- Requiere desplegar backend y frontend juntos, con las migraciones 013 y 014. En local la migración más reciente es 014_cargo_entrega; en producción, 012_impresion_agente.
-- El agente de impresión (escpos.py: nombre del cliente y cargo de entrega) se actualiza en cada tienda después de la prueba física en la PC de Centro.
+- En producción desde 2026-11-07: facturación fase 1 (nombre obligatorio y datos fiscales), cargo de entrega con tope por tienda (Q200.00 en las 3 tiendas) y cancelación con motivo y contraseña en Órdenes y Cocina.
+- El agente de impresión NO se actualizó: escpos.py (nombre del cliente y cargo de entrega) se instala en cada tienda después de la prueba física en la PC de Centro.
 
 **Seguridad pendiente**
 - El historial de Git fue reescrito (los secretos ya no están en main). Quedan pendientes: solicitud a GitHub Support para purgar los commits anteriores a 755d717; revisar alertas de Secret Scanning; revisar forks.
-- Hay respaldos con valores viejos en el servidor (/root/). Borrarlos cuando la producción esté estable varios días. Incluye /root/frontend-dist-previo-20261106 (frontend anterior al cambio a Q, sirve para revertir).
+- Hay respaldos con valores viejos en el servidor (/root/). Borrarlos cuando la producción esté estable varios días. Incluye /root/frontend-dist-previo-20261106 (frontend anterior al cambio a Q) y /root/frontend-dist-previo-20261107 (frontend anterior al despliegue de 4bff6c2).
+- Respaldo de la base previo a las migraciones 013 y 014: /root/backups/ en el servidor y ~/respaldos-foodops/ en la máquina local. Contiene datos de producción: borrarlo junto con los demás respaldos.
 
 **Reglas aprendidas hoy (obligatorias)**
 - Nunca editar .env.production con sed ni reemplazos de texto. Para secretos, usar un script en Python que valide el formato de DATABASE_URL y DATABASE_SYNC_URL (postgresql://usuario:clave@db:5432/foodops_db) antes de escribir, y que pruebe la conexión por TCP desde la red de Docker antes de recrear api.
@@ -90,4 +89,3 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Devolución de órdenes pagadas (diseño pendiente).
 - PUT /api/ordenes/{id}/status sigue abierto para cancelar sin motivo ni contraseña. Cerrarlo es el siguiente paso de seguridad.
 - Órdenes activas antiguas en cocina (ORD-9 de hace casi 20 días): decidir qué hacer.
-- Pendiente de push: los commits de hoy, después de revisión.
