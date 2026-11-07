@@ -44,14 +44,18 @@
             class="text-xs bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded font-medium">
             Entregado
           </button>
-          <button v-if="['pendiente','preparando'].includes(orden.estado) && puedeCancelar(orden)"
-            @click="cambiarEstado(orden, 'cancelado')"
+          <!-- Cancelar: motivo y contraseña personal, también en órdenes cobradas -->
+          <button v-if="['pendiente','preparando'].includes(orden.estado) && puedeCancelar"
+            @click="ordenACancelar = orden" title="Cancelar orden" aria-label="Cancelar orden"
             class="text-xs bg-red-100 hover:bg-red-200 text-red-600 px-2 py-1 rounded font-medium">
             ✕
           </button>
         </template>
       </OrderCard>
     </div>
+
+    <CancelarOrdenModal v-if="ordenACancelar" :orden="ordenACancelar" origen="pos"
+      @cerrar="ordenACancelar = null" @cancelada="alCancelar" />
   </div>
 </template>
 
@@ -60,7 +64,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/store/index'
 import OrderCard from '@/components/OrderCard.vue'
 import api from '@/services/api'
-import { ROLES_CONFIRMAR_COBRO, tieneRol } from '@/permisos.js'
+import { ROLES_CANCELAR_COCINA, tieneRol } from '@/permisos.js'
+import CancelarOrdenModal from '@/components/CancelarOrdenModal.vue'
 
 const auth = useAuthStore()
 const ordenes = ref([])
@@ -94,13 +99,16 @@ function conteo(estado) {
   return ordenes.value.filter(o => o.estado === estado).length
 }
 
-// Una orden en efectivo ya cobrada solo la puede cancelar quien confirma
-// cobros (mismo set que ROLES_CONFIRMAR_COBRO del backend) - para el resto,
-// ocultar el botón en vez de dejar que lo intente y reciba un 403 (ver
-// actualizar_estado_orden en router_ordenes.py).
-function puedeCancelar(orden) {
-  if (orden.metodo_pago !== 'efectivo' || orden.estado_cobro !== 'cobrada') return true
-  return tieneRol(auth.user, ROLES_CONFIRMAR_COBRO)
+// Cancelan responsable, gerentes y admin (los mismos que en cocina), con
+// motivo y contraseña por POST /cancelar. El vendedor ya no cancela aquí.
+const puedeCancelar = computed(() => tieneRol(auth.user, ROLES_CANCELAR_COCINA))
+const ordenACancelar = ref(null)
+function alCancelar(orden, data) {
+  orden.estado = 'cancelado'
+  ordenACancelar.value = null
+  if (data?.devolucion_pendiente) {
+    alert(`Orden ${orden.numero_orden} cancelada. Queda pendiente devolver el pago al cliente.`)
+  }
 }
 
 async function fetchOrdenes() {

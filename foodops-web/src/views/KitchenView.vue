@@ -45,7 +45,7 @@
       </div>
     </div>
 
-    <CancelarOrdenCocinaModal v-if="ordenACancelar" :orden="ordenACancelar"
+    <CancelarOrdenModal v-if="ordenACancelar" :orden="ordenACancelar"
       @cerrar="ordenACancelar = null" @cancelada="quitarOrden" />
   </div>
 </template>
@@ -54,7 +54,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/store/index'
 import { ROLES_CANCELAR_COCINA, tieneRol } from '@/permisos.js'
-import CancelarOrdenCocinaModal from '@/components/CancelarOrdenCocinaModal.vue'
+import CancelarOrdenModal from '@/components/CancelarOrdenModal.vue'
 import KitchenTicket from '@/components/KitchenTicket.vue'
 import api from '@/services/api'
 
