@@ -19,6 +19,11 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Un vendedor nunca abre el cajón ni cancela una orden COBRADA.
 - La venta nunca depende de que el agente o la impresora funcionen.
 - Un trabajo ABRIR_CAJON caduca a los 120 segundos y se crea una sola vez por orden.
+- Cancelar una orden requiere motivo y la contraseña personal de quien cancela. El intento fallido cuenta en el bloqueo del login.
+- Órdenes pendientes: pueden cancelarse desde Órdenes o Cocina por responsable, gerente de punto, gerente general o admin. El vendedor no cancela; se lo pide al responsable.
+- Órdenes pagadas: pueden cancelarse desde Órdenes, pero la devolución al cliente NO existe todavía. Hasta que exista, la caja queda con sobrante. Regla operativa: no cancelar órdenes pagadas; devolver por el método manual y dejar la orden como está.
+- No se cancela una orden pagada de un día con caja cerrada. (Regla vigente; implementación pendiente.)
+- La devolución de dinero será un movimiento propio ligado a la orden, nunca un cambio de estado del cobro original.
 
 ## Impresión
 - Diseño: docs/DISENO_IMPRESION.md (fuente de verdad). Leerlo antes de tocar impresión o cobro.
@@ -59,6 +64,11 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Local Centro: vendedor y responsable creados; flujo de venta en efectivo probado de punta a punta.
 - Impresora y cajón de Centro: pendientes de activar por SQL tras la prueba física (ver docs/RUNBOOK_ACTIVAR_CENTRO.md). Jordán y Auxiliar siguen desactivadas.
 
+**Local, sin desplegar (2026-11-07)**
+- Facturación fase 1 (nombre obligatorio y datos fiscales), cargo de entrega con tope por tienda y cancelación con motivo y contraseña en Órdenes y Cocina.
+- Requiere desplegar backend y frontend juntos, con las migraciones 013 y 014. En local la migración más reciente es 014_cargo_entrega; en producción, 012_impresion_agente.
+- El agente de impresión (escpos.py: nombre del cliente y cargo de entrega) se actualiza en cada tienda después de la prueba física en la PC de Centro.
+
 **Seguridad pendiente**
 - El historial de Git fue reescrito (los secretos ya no están en main). Quedan pendientes: solicitud a GitHub Support para purgar los commits anteriores a 755d717; revisar alertas de Secret Scanning; revisar forks.
 - Hay respaldos con valores viejos en el servidor (/root/). Borrarlos cuando la producción esté estable varios días. Incluye /root/frontend-dist-previo-20261106 (frontend anterior al cambio a Q, sirve para revertir).
@@ -75,3 +85,9 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Confirmar el rol de alejandro.
 - Code page de la impresora AON PR-350WF (prueba_impresora.py, pendiente de resultado en Centro).
 - Responsables y vendedores de Jordán y Auxiliar.
+
+**Pendientes**
+- Devolución de órdenes pagadas (diseño pendiente).
+- PUT /api/ordenes/{id}/status sigue abierto para cancelar sin motivo ni contraseña. Cerrarlo es el siguiente paso de seguridad.
+- Órdenes activas antiguas en cocina (ORD-9 de hace casi 20 días): decidir qué hacer.
+- Pendiente de push: los commits de hoy, después de revisión.
