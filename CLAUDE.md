@@ -50,7 +50,9 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 ## Estado al cierre de la última sesión
 
 **Producción**
-- Backend y frontend de impresión desplegados. Commit en producción: 755d717.
+- Backend y frontend de impresión desplegados. Commit en producción: backend 755d717, frontend e3981c4 (2026-11-06).
+- Montos en quetzales: el frontend formatea todos los importes con formatQ() de foodops-web/src/utils/moneda.js (Q1,234.50, -Q5.00). No usar "$", toFixed a mano ni Intl con GTQ. El ticket (utils/ticket.js) mantiene su propio formato con Q.
+- Tras desplegar frontend, purgar Cloudflare; los navegadores con la PWA abierta pueden necesitar cerrar y volver a abrir.
 - Cobro en efectivo verificado: el vendedor registra, el responsable confirma, el cuadre cuenta solo COBRADA.
 - Rotación de secretos completada: contraseña de la base, SECRET_KEY, JWT_SECRET y contraseña de admin. Los vendedores deben volver a iniciar sesión.
 - Usuarios activos: admin (ADMIN, sin tienda, solo administración), vendedor1 (TOMADOR_ORDEN, Local Centro), alejandro (GERENTE_CENTRAL, sin tienda, sin POS), central_test (desactivado).
@@ -59,7 +61,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 
 **Seguridad pendiente**
 - El historial de Git fue reescrito (los secretos ya no están en main). Quedan pendientes: solicitud a GitHub Support para purgar los commits anteriores a 755d717; revisar alertas de Secret Scanning; revisar forks.
-- Hay respaldos con valores viejos en el servidor (/root/). Borrarlos cuando la producción esté estable varios días.
+- Hay respaldos con valores viejos en el servidor (/root/). Borrarlos cuando la producción esté estable varios días. Incluye /root/frontend-dist-previo-20261106 (frontend anterior al cambio a Q, sirve para revertir).
 
 **Reglas aprendidas hoy (obligatorias)**
 - Nunca editar .env.production con sed ni reemplazos de texto. Para secretos, usar un script en Python que valide el formato de DATABASE_URL y DATABASE_SYNC_URL (postgresql://usuario:clave@db:5432/foodops_db) antes de escribir, y que pruebe la conexión por TCP desde la red de Docker antes de recrear api.
