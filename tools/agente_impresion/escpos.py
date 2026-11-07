@@ -94,10 +94,15 @@ def ticket(payload: dict, ancho: int = 42, nombre_negocio: str = "Asados a la Le
         out += [_linea(t) for t in _partir(o["punto_nombre"], ancho)]
     out += [NEGRITA_OFF, _linea(_fecha_local(o.get("created_at"))), ALINEAR_IZQ, sep]
 
-    filas = _fila("Orden:", o.get("numero_orden") or "", ancho)
-    filas += _fila("Tipo:", "Domicilio" if o.get("es_domicilio") else "Para llevar", ancho)
+    out += [_linea(t) for t in _fila("Orden:", o.get("numero_orden") or "", ancho)]
+    # El nombre va siempre (también "para llevar"), en negrita y doble alto,
+    # justo debajo de la orden: con él se llama al cliente al entregar.
+    out += [NEGRITA_ON, DOBLE_ALTO]
+    out += [_linea(t) for t in _fila("Cliente:", o.get("cliente_nombre") or "", ancho)]
+    out += [TAMANO_NORMAL, NEGRITA_OFF]
+
+    filas = _fila("Tipo:", "Domicilio" if o.get("es_domicilio") else "Para llevar", ancho)
     if o.get("es_domicilio"):
-        filas += _fila("Cliente:", o.get("cliente_nombre") or "", ancho)
         filas += _fila("Tel:", o.get("cliente_telefono") or "", ancho)
         filas += _partir(o.get("cliente_direccion") or "", ancho)
     filas += _fila("Atendió:", o.get("tomada_por_nombre") or "", ancho)

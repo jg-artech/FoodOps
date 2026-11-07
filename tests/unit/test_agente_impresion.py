@@ -113,6 +113,36 @@ def test_ticket_es_escpos_con_corte_y_sin_html():
     assert "<" not in texto and "html" not in texto.lower()
 
 
+@pytest.mark.parametrize("es_domicilio", [True, False], ids=["domicilio", "para-llevar"])
+def test_ticket_muestra_el_cliente_en_negrita_debajo_de_la_orden(es_domicilio):
+    orden = {**ORDEN, "es_domicilio": es_domicilio, "cliente_nombre": "María López"}
+    datos = escpos.ticket({"orden": orden})
+    texto = datos.decode("cp850")
+    # Una sola vez, aunque sea domicilio (antes iba en el bloque de entrega).
+    assert texto.count("Cliente:") == 1
+    i_orden, i_cliente, i_tipo = (texto.index(t) for t in ("Orden:", "Cliente:", "Tipo:"))
+    assert i_orden < i_cliente < i_tipo
+    # Negrita + doble alto justo antes del nombre, y se apagan después.
+    bloque = escpos.NEGRITA_ON + escpos.DOBLE_ALTO + "Cliente:".encode("cp850")
+    assert bloque in datos
+    fin = datos.index(bloque) + len(bloque)
+    resto = datos[fin:]
+    assert "María López".encode("cp850") in resto[: resto.index(escpos.NEGRITA_OFF)]
+    assert resto.index(escpos.TAMANO_NORMAL) < resto.index("Tipo:".encode("cp850"))
+
+
+def test_ticket_para_llevar_no_muestra_datos_de_domicilio():
+    texto = escpos.ticket({"orden": {**ORDEN, "es_domicilio": False}}).decode("cp850")
+    assert "Para llevar" in texto
+    assert "Tel:" not in texto and "Zona 1" not in texto
+
+
+def test_ticket_cliente_sin_nombre_no_falla():
+    """Órdenes históricas sin nombre: la línea sale vacía, sin error."""
+    texto = escpos.ticket({"orden": {**ORDEN, "cliente_nombre": None}}).decode("cp850")
+    assert "Cliente:" in texto
+
+
 def test_ticket_usa_montos_confirmados_por_el_responsable():
     texto = escpos.ticket({"orden": ORDEN}).decode("cp850")
     assert "Q200.00" in texto and "Q115.00" in texto
