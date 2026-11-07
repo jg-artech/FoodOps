@@ -186,6 +186,37 @@ class ConfirmarCobroRequest(BaseModel):
     vuelto_entregado: Precio
 
 
+MOTIVO_CANCELACION_MIN = 5
+MOTIVO_CANCELACION_MAX = 200
+
+
+class CancelarCocinaRequest(BaseModel):
+    """Cancelación desde cocina: motivo y la contraseña PERSONAL de quien
+    cancela (el usuario en sesión). extra="forbid": no se acepta punto_id.
+
+    Ojo: no usar este modelo como parámetro directo del endpoint. El 422 por
+    defecto de FastAPI devuelve el "input" (con un campo faltante, el cuerpo
+    completo, contraseña incluida). El endpoint valida a mano y responde sin
+    input (router_ordenes.cancelar_desde_cocina)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    motivo: Annotated[Optional[str], Field(default=None, validate_default=True)]
+    password: Annotated[str, Field(min_length=1, max_length=128)]
+
+    @field_validator("motivo", mode="before")
+    @classmethod
+    def _motivo(cls, v):
+        texto = v.strip() if isinstance(v, str) else ""
+        if not (MOTIVO_CANCELACION_MIN <= len(texto) <= MOTIVO_CANCELACION_MAX):
+            raise PydanticCustomError(
+                "motivo_cancelacion",
+                "El motivo es obligatorio: entre {min} y {max} caracteres",
+                {"min": MOTIVO_CANCELACION_MIN, "max": MOTIVO_CANCELACION_MAX},
+            )
+        return texto
+
+
 class OrdenResponse(BaseModel):
     id: int
     numero_orden: str

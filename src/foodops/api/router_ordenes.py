@@ -5,7 +5,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from pydantic import ValidationError
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
@@ -39,7 +40,9 @@ from foodops.db.models import (
 from foodops.db.models_stock import ProductoComponente, ProductoMenu, TransaccionComponente
 from foodops.domain import autorizacion_cargo
 from foodops.domain.impresion import encolar_cajon_por_cobro
+from foodops.api.router_auth import verificar_password_con_bloqueo
 from foodops.domain.schemas import (
+    CancelarCocinaRequest,
     ConfirmarCobroRequest,
     CrearTransaccionRequest,
     DatosFacturaRequest,
@@ -399,6 +402,13 @@ def listar_ordenes(
         session.close()
 
 
+# TODO IMPORTANTE (riesgo, sin cambiar en este cambio): PUT /status deja que
+# cualquier rol de operación (también cocinero, repartidor y vendedor)
+# cancele una orden sin motivo ni contraseña, incluidas las cobradas con
+# tarjeta o transferencia, y tampoco impide reactivar una orden cancelada.
+# La cancelación desde cocina con motivo y contraseña es
+# POST /{orden_id}/cancelar-cocina (más abajo); el POS (/pos/ordenes) sigue
+# usando este endpoint.
 @router.put("/{orden_id}/status")
 def actualizar_estado_orden(
     orden_id: int,
@@ -455,6 +465,129 @@ def actualizar_estado_orden(
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+# Cancelan desde cocina: los mismos que confirman cobros.
+_ROLES_CANCELAR_COCINA = _ROLES_CONFIRMAR_COBRO
+
+# Mismo mensaje y código para contraseña incorrecta y usuario bloqueado: no
+# se revela si la cuenta está bloqueada. 401: el frontend exceptúa esta ruta
+# de su cierre de sesión por 401 (services/api.js).
+def _contrasena_incorrecta() -> HTTPException:
+    return HTTPException(status_code=401, detail="Contraseña incorrecta")
+
+
+def _errores_sin_input(exc: ValidationError) -> list:
+    """Errores de validación sin el campo "input" de Pydantic, que en un
+    campo faltante trae el cuerpo completo (con la contraseña)."""
+    return [
+        {"loc": ["body", *e["loc"]], "msg": e["msg"], "type": e["type"]}
+        for e in exc.errors(include_url=False, include_input=False, include_context=False)
+    ]
+
+
+@router.post("/{orden_id}/cancelar-cocina")
+def cancelar_desde_cocina(
+    orden_id: int,
+    body: object = Body(None),
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_CANCELAR_COCINA)),
+):
+    """Cancela una orden desde cocina con motivo y la contraseña personal de
+    quien cancela. Orden de validaciones: rol (403, en la dependencia) ->
+    motivo y cuerpo (422) -> orden existe (404) -> tienda (403) -> ya
+    cancelada (409) -> cobrada (409) -> bloqueo o contraseña (401, mismo
+    mensaje) -> cancelar.
+
+    Una orden cancelada no se reactiva por aquí (no hay endpoint para eso).
+    La contraseña nunca se guarda: ni en auditoría, ni en logs, ni en los
+    mensajes de error.
+    """
+    # body: object y validación a mano para responder el 422 sin "input".
+    try:
+        datos = CancelarCocinaRequest.model_validate(body if isinstance(body, dict) else {})
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=_errores_sin_input(exc))
+
+    session = Session()
+    try:
+        orden = session.get(Orden, orden_id)
+        if not orden:
+            raise HTTPException(status_code=404, detail="Orden no encontrada")
+        exigir_acceso_a_punto(current_user, orden.punto_id)
+        if orden.estado == OrdenEstado.CANCELADO:
+            raise HTTPException(status_code=409, detail="La orden ya está cancelada")
+        if orden.estado_cobro == ESTADO_COBRO_COBRADA:
+            # TODO: Cancelación de órdenes cobradas (tarjeta, transferencia o
+            # efectivo) pendiente de decisión: opción A permitir con motivo y
+            # contraseña y dejar la devolución como pendiente; opción B cerrar
+            # PUT /status y definir devolución antes.
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Esta orden ya fue cobrada y no se puede cancelar desde cocina; "
+                    "la corrige administración"
+                ),
+            )
+
+        usuario = session.get(Usuario, current_user.user_id)
+        resultado = (
+            verificar_password_con_bloqueo(usuario, datos.password) if usuario else "password_incorrecto"
+        )
+        if resultado:
+            # El intento cuenta en el mismo contador del login: se guarda
+            # aunque la cancelación se rechace.
+            registrar_auditoria(
+                session,
+                accion="CANCELACION_COCINA_RECHAZADA",
+                entidad="orden",
+                entidad_id=orden.id,
+                usuario_id=current_user.user_id,
+                punto_id=orden.punto_id,
+                detalle={
+                    "numero_orden": orden.numero_orden,
+                    "motivo_rechazo": resultado,
+                    "intentos": usuario.intentos_fallidos if usuario else None,
+                },
+            )
+            session.commit()
+            raise _contrasena_incorrecta()
+
+        estado_previo = orden.estado.value
+        estado_cobro_previo = orden.estado_cobro
+        cancelada_at = datetime.utcnow()
+        orden.estado = OrdenEstado.CANCELADO
+        # TODO: si la orden tiene datos de factura capturados y la factura no
+        # está generada, quedan como están (no se borran). Falta decidir qué
+        # pasa con ellos al cancelar.
+        # TODO: órdenes activas antiguas (p. ej. pendientes de hace semanas):
+        # falta decidir qué hacer con ellas. Este endpoint no las cancela en
+        # bloque ni cambia su estado.
+        registrar_auditoria(
+            session,
+            accion="ORDEN_CANCELADA_DESDE_COCINA",
+            entidad="orden",
+            entidad_id=orden.id,
+            usuario_id=current_user.user_id,
+            punto_id=orden.punto_id,
+            detalle={
+                "orden_id": orden.id,
+                "numero_orden": orden.numero_orden,
+                "estado_previo": estado_previo,
+                "estado_cobro_previo": estado_cobro_previo,
+                "motivo": datos.motivo,
+                "cancelada_at": cancelada_at.isoformat(),
+            },
+        )
+        session.commit()
+        return {"id": orden.id, "numero_orden": orden.numero_orden, "estado": orden.estado.value}
+    except HTTPException:
+        raise
+    except Exception:
+        session.rollback()
+        logger.exception("Error inesperado en cancelar-cocina (orden %s)", orden_id)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
     finally:
         session.close()
 

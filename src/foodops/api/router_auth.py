@@ -44,6 +44,24 @@ Session = sessionmaker(bind=engine)
 _MAX_INTENTOS = 5
 _BLOQUEO_MINUTOS = 15
 
+
+def verificar_password_con_bloqueo(usuario: Usuario, password: str) -> Optional[str]:
+    """Contraseña de un usuario con el mismo bloqueo que /login: mismos
+    contadores (intentos_fallidos, bloqueado_hasta), mismo máximo y misma
+    duración. Devuelve None si es correcta (y reinicia los contadores, como
+    el login); si no, "bloqueado" o "password_incorrecto". No hace commit:
+    lo hace quien llama, también cuando falla, para que el intento cuente."""
+    if usuario.bloqueado_hasta and usuario.bloqueado_hasta > datetime.utcnow():
+        return "bloqueado"
+    if not verify_password(password, usuario.password_hash):
+        usuario.intentos_fallidos = (usuario.intentos_fallidos or 0) + 1
+        if usuario.intentos_fallidos >= _MAX_INTENTOS:
+            usuario.bloqueado_hasta = datetime.utcnow() + timedelta(minutes=_BLOQUEO_MINUTOS)
+        return "password_incorrecto"
+    usuario.intentos_fallidos = 0
+    usuario.bloqueado_hasta = None
+    return None
+
 # Crear/editar usuarios es más sensible que solo listarlos (GET /usuarios
 # además deja entrar a resp_tienda, para que pueda ver sus repartidores).
 _ROLES_GESTION_USUARIOS = ("admin", "gerente_general")
@@ -222,23 +240,19 @@ def autorizar_cargo_entrega(
         if responsable is None:
             fallo("usuario_no_existe")
             raise _NO
-        if responsable.bloqueado_hasta and responsable.bloqueado_hasta > datetime.utcnow():
+        # Mismo bloqueo y contadores que /login. Con la contraseña correcta
+        # se reinician antes de revisar si además tiene permiso para autorizar.
+        resultado = verificar_password_con_bloqueo(responsable, body.password)
+        if resultado == "bloqueado":
             fallo("bloqueado", responsable)
             raise HTTPException(
                 status_code=403,
                 detail="El usuario del responsable está bloqueado temporalmente por intentos fallidos",
             )
-        if not verify_password(body.password, responsable.password_hash):
-            responsable.intentos_fallidos = (responsable.intentos_fallidos or 0) + 1
-            if responsable.intentos_fallidos >= _MAX_INTENTOS:
-                responsable.bloqueado_hasta = datetime.utcnow() + timedelta(minutes=_BLOQUEO_MINUTOS)
-            fallo("password_incorrecto", responsable)
+        if resultado:
+            fallo(resultado, responsable)
             raise _NO
 
-        # Contraseña correcta: se reinician los contadores, como en /login,
-        # antes de revisar si además tiene permiso para autorizar.
-        responsable.intentos_fallidos = 0
-        responsable.bloqueado_hasta = None
         motivo = autorizacion_cargo.responsable_puede_autorizar(responsable, punto_id)
         if motivo:
             fallo(motivo, responsable)
