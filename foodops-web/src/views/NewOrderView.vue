@@ -312,6 +312,7 @@
       v-if="modalPieza.visible"
       :opciones="modalPieza.opciones"
       :precio="modalPieza.precio"
+      :nombre="modalPieza.item?.nombre"
       @confirmar="onPiezaConfirmada"
       @cancelar="modalPieza.visible = false"
     />
