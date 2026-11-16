@@ -28,7 +28,7 @@ from foodops.db.models_stock import (
     TransaccionComponente,
 )
 from foodops.domain.schemas_stock import PedidoReabastecimientoCreate, RecibirPedidoRequest
-from foodops.utils.timeutils import local_day_bounds
+from foodops.utils.timeutils import hoy_local, local_day_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ def _stock_actual(session, punto_id: int, fecha: date) -> list:
 
 def _consumo_promedio_diario(session, punto_id: int) -> dict:
     """Promedio de consumo teórico exacto de los últimos _DIAS_PROMEDIO días (total/dias)."""
-    hoy = date.today()
+    hoy = hoy_local()
     inicio, _ = _day_bounds(hoy - timedelta(days=_DIAS_PROMEDIO))
     _, fin = _day_bounds(hoy - timedelta(days=1))
 
@@ -176,7 +176,7 @@ def stock_actual(
     effective_punto_id = _resolve_punto_id(current_user, punto_id)
     session = Session()
     try:
-        return _stock_actual(session, effective_punto_id, date.today())
+        return _stock_actual(session, effective_punto_id, hoy_local())
     finally:
         session.close()
 
@@ -190,7 +190,7 @@ def stock_proyeccion(
     effective_punto_id = _resolve_punto_id(current_user, punto_id)
     session = Session()
     try:
-        stock_hoy = {s["item_id"]: s for s in _stock_actual(session, effective_punto_id, date.today())}
+        stock_hoy = {s["item_id"]: s for s in _stock_actual(session, effective_punto_id, hoy_local())}
         promedio_map = _consumo_promedio_diario(session, effective_punto_id)
 
         resultado = []
@@ -211,7 +211,7 @@ def stock_proyeccion(
 
 
 def _recomendaciones(session, punto_id: int) -> list:
-    stock_hoy = _stock_actual(session, punto_id, date.today())
+    stock_hoy = _stock_actual(session, punto_id, hoy_local())
     promedio_map = _consumo_promedio_diario(session, punto_id)
 
     resultado = []

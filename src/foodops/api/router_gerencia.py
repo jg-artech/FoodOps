@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from foodops.api.router_stock import _pedido_dict, _recomendaciones, _stock_actual
 from foodops.core.auth import TokenData, requiere_rol, resolver_punto_id
 from foodops.core.config import settings
+from foodops.utils.timeutils import hoy_local
 from foodops.db.models import PuntoVenta
 from foodops.db.models_stock import PedidoReabastecimiento
 
@@ -24,7 +25,7 @@ _ROLES_GERENCIA = ("gerente_general", "admin")
 
 
 def _dashboard_punto(session, punto: PuntoVenta) -> dict:
-    stock = _stock_actual(session, punto.id, date.today())
+    stock = _stock_actual(session, punto.id, hoy_local())
     recomendaciones = _recomendaciones(session, punto.id)
     pedidos_pendientes = session.execute(
         select(PedidoReabastecimiento).where(

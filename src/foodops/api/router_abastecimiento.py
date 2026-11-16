@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from foodops.core.audit import registrar_auditoria
 from foodops.core.auth import ROLES_MULTI_TIENDA, TokenData, get_current_user, requiere_rol
 from foodops.core.config import settings
+from foodops.utils.timeutils import hoy_local
 from foodops.db.models import Orden, PuntoVenta, Usuario
 from foodops.db.models_caja import ItemInventario
 from foodops.db.models_stock import (
@@ -76,7 +77,7 @@ def sugerencias_abastecimiento(
     fecha: Optional[date] = Query(default=None),
     current_user: TokenData = Depends(requiere_rol(*_ROLES_CENTRAL)),
 ):
-    fecha_objetivo = fecha or date.today()
+    fecha_objetivo = fecha or hoy_local()
     ayer = fecha_objetivo - timedelta(days=1)
 
     session = Session()
@@ -267,7 +268,7 @@ def enviar_pedido_abastecimiento(
         if pedido.fecha_envio is not None:
             raise HTTPException(status_code=400, detail="Este pedido ya fue marcado como enviado")
 
-        pedido.fecha_envio = date.today()
+        pedido.fecha_envio = hoy_local()
 
         registrar_auditoria(
             session,

@@ -44,7 +44,7 @@ from foodops.domain.schemas_caja import (
     ItemInventarioUpdate,
     TransaccionPedidoCreate,
 )
-from foodops.utils.timeutils import local_day_bounds
+from foodops.utils.timeutils import hoy_local, local_day_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +268,7 @@ def abrir_caja(
     session = Session()
     try:
         punto_id = exigir_punto_propio(current_user)
-        hoy = date.today()
+        hoy = hoy_local()
         existente = session.execute(
             select(CajaDiaria).where(
                 CajaDiaria.punto_id == punto_id,
@@ -356,7 +356,7 @@ def caja_actual(current_user: TokenData = Depends(requiere_rol(*_ROLES_TIENDA)))
         caja = session.execute(
             select(CajaDiaria).where(
                 CajaDiaria.punto_id == exigir_punto_propio(current_user),
-                CajaDiaria.fecha == date.today(),
+                CajaDiaria.fecha == hoy_local(),
             )
         ).scalars().first()
         if not caja:
@@ -710,7 +710,7 @@ def listar_items_inventario(
 def _submit_inventario(session, current_user: TokenData, momento: str, body: InventarioDiarioSubmit) -> InventarioDiario:
     punto_id = exigir_punto_propio(current_user)
     caja = _get_caja_abierta(session, punto_id)
-    hoy = date.today()
+    hoy = hoy_local()
 
     inv = session.execute(
         select(InventarioDiario).where(
@@ -781,7 +781,7 @@ def get_inventario_diario(
         caja = session.execute(
             select(CajaDiaria).where(
                 CajaDiaria.punto_id == exigir_punto_propio(current_user),
-                CajaDiaria.fecha == date.today(),
+                CajaDiaria.fecha == hoy_local(),
             )
         ).scalars().first()
         if not caja:
@@ -1018,7 +1018,7 @@ def listar_fondos_repartidor(current_user: TokenData = Depends(requiere_rol(*_RO
         caja = session.execute(
             select(CajaDiaria).where(
                 CajaDiaria.punto_id == exigir_punto_propio(current_user),
-                CajaDiaria.fecha == date.today(),
+                CajaDiaria.fecha == hoy_local(),
             )
         ).scalars().first()
         if not caja:

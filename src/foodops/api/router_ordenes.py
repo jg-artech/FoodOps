@@ -30,7 +30,7 @@ from foodops.core.permisos_ordenes import (
     ROLES_SOLO_IMPORTES_PROPIOS,
     ROLES_SOLO_ORDENES_DE_HOY,
 )
-from foodops.utils.timeutils import limites_hoy_guatemala
+from foodops.utils.timeutils import hoy_local, limites_hoy_guatemala, local_day_bounds
 from foodops.db.models import (
     ITEM_TIPO_ENTREGA,
     ITEM_TIPO_PRODUCTO,
@@ -893,8 +893,9 @@ def reporte_cierre(
     session = Session()
     try:
         resolver_punto_id(session, current_user, punto_id)
-        today = date.today()
-        today_start = datetime(today.year, today.month, today.day)
+        # Inicio de hoy en Guatemala (antes: medianoche UTC = 18:00 de ayer).
+        today = hoy_local()
+        today_start, _ = local_day_bounds(today)
 
         ordenes = session.execute(
             select(Orden).where(
@@ -1144,7 +1145,7 @@ def reporte_rentabilidad(
     session = Session()
     try:
         resolver_punto_id(session, current_user, punto_id)
-        today_start = datetime(date.today().year, date.today().month, date.today().day)
+        today_start, _ = local_day_bounds(hoy_local())
 
         transacciones = session.execute(
             select(TransaccionVenta).where(

@@ -1,44 +1,45 @@
-"""Utilidades de fecha/hora"""
+"""Utilidades de fecha/hora: el día local del negocio, en un solo lugar.
+
+Las columnas created_at/updated_at se guardan en UTC naive
+(datetime.utcnow()). El "día" del negocio es el de Guatemala. Antes, la caja
+usaba la zona del servidor (date.today() y datetime.now().astimezone()) y el
+listado del vendedor un UTC-6 propio: en un contenedor en UTC los dos días
+no coincidían después de las 18:00. Todo lo que necesite "hoy" o los límites
+de un día debe pasar por aquí.
+"""
 from datetime import date, datetime, timedelta, timezone
+
+# Zona del negocio: único lugar donde se define. Guatemala no tiene horario
+# de verano (UTC-6 todo el año); un desfase fijo evita depender de la base de
+# zonas horarias del sistema o de la variable TZ del contenedor.
+ZONA_LOCAL = timezone(timedelta(hours=-6), "America/Guatemala")
+
+
+def ahora_utc() -> datetime:
+    """Momento actual en UTC naive (el mismo formato que created_at). Las
+    pruebas lo reemplazan para fijar el reloj."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def hoy_local(ahora: datetime | None = None) -> date:
+    """Fecha de hoy en Guatemala. `ahora` es UTC naive; por defecto, ahora_utc()."""
+    if ahora is None:
+        ahora = ahora_utc()
+    return ahora.replace(tzinfo=timezone.utc).astimezone(ZONA_LOCAL).date()
 
 
 def local_day_bounds(fecha: date) -> tuple[datetime, datetime]:
-    """Rango [inicio, fin) de un día calendario LOCAL, expresado como datetimes
+    """Rango [inicio, fin) del día `fecha` en Guatemala, como datetimes
     naive-UTC comparables contra columnas pobladas con datetime.utcnow().
-
-    Necesario porque date.today() usa la zona horaria local del servidor
-    (America/Guatemala, UTC-6) mientras que created_at/updated_at se guardan
-    en UTC vía datetime.utcnow(). Comparar un rango naive construido
-    directamente desde `fecha` (sin este ajuste) contra timestamps UTC excluye
-    silenciosamente cualquier registro creado después de las 18:00 hora local
-    (que ya cae en el día UTC siguiente) - un bug real que afectaba el cálculo
-    de efectivo_esperado y consumo_teórico en horas de la tarde/noche.
-    """
-    local_tz = datetime.now().astimezone().tzinfo
-    start_local = datetime(fecha.year, fecha.month, fecha.day, tzinfo=local_tz)
-    end_local = start_local + timedelta(days=1)
-    start_utc = start_local.astimezone(timezone.utc).replace(tzinfo=None)
-    end_utc = end_local.astimezone(timezone.utc).replace(tzinfo=None)
-    return start_utc, end_utc
-
-
-# Guatemala no tiene horario de verano: UTC-6 todo el año. Se usa un desfase
-# fijo para no depender de la zona horaria del servidor o del contenedor
-# (local_day_bounds sí depende de ella).
-ZONA_GUATEMALA = timezone(timedelta(hours=-6), "America/Guatemala")
-
-
-def limites_hoy_guatemala(ahora_utc: datetime | None = None) -> tuple[datetime, datetime]:
-    """Rango [inicio, fin) del día de hoy en Guatemala, como datetimes
-    naive-UTC comparables con columnas pobladas con datetime.utcnow()."""
-    if ahora_utc is None:
-        ahora_utc = datetime.now(timezone.utc)
-    elif ahora_utc.tzinfo is None:
-        ahora_utc = ahora_utc.replace(tzinfo=timezone.utc)
-    hoy = ahora_utc.astimezone(ZONA_GUATEMALA).date()
-    inicio = datetime(hoy.year, hoy.month, hoy.day, tzinfo=ZONA_GUATEMALA)
-    fin = inicio + timedelta(days=1)
+    Ej.: 2026-11-15 -> [2026-11-15 06:00, 2026-11-16 06:00) UTC."""
+    inicio_local = datetime(fecha.year, fecha.month, fecha.day, tzinfo=ZONA_LOCAL)
+    fin_local = inicio_local + timedelta(days=1)
     return (
-        inicio.astimezone(timezone.utc).replace(tzinfo=None),
-        fin.astimezone(timezone.utc).replace(tzinfo=None),
+        inicio_local.astimezone(timezone.utc).replace(tzinfo=None),
+        fin_local.astimezone(timezone.utc).replace(tzinfo=None),
     )
+
+
+def limites_hoy_guatemala(ahora: datetime | None = None) -> tuple[datetime, datetime]:
+    """Límites del día de hoy en Guatemala (los de local_day_bounds)."""
+    return local_day_bounds(hoy_local(ahora))
