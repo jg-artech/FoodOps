@@ -60,6 +60,11 @@
     <!-- pb-24: deja espacio para la barra fija de abajo (64px) -->
     <div v-if="step === 2" class="pb-24">
       <h2 class="text-xl font-bold text-gray-800 mb-1">Seleccionar productos</h2>
+      <!-- Quién atiende y en qué tienda, en una sola línea -->
+      <p class="text-sm text-gray-600 truncate" :title="`${auth.user?.username} · ${nombreTiendaPos}`">
+        👤 Atiende: <span class="font-semibold">{{ auth.user?.username }}</span>
+        · 🏪 <span class="font-semibold">{{ nombreTiendaPos }}</span>
+      </p>
       <p class="text-sm text-gray-400 mb-5">Toca [+] para agregar</p>
 
       <div v-for="cat in categorias" :key="cat.key" class="mb-6">
@@ -395,6 +400,24 @@ const factura = reactive(datosFacturaVacios())
 const cargoEntrega = reactive(cargoEntregaVacio())
 const esResponsable = computed(() => tieneRol(auth.user, ROLES_CONFIRMAR_COBRO))
 const topeCargo = computed(() => auth.user?.tope_cargo_entrega ?? null)
+
+// Tienda que se muestra en el encabezado de productos. Un rol de tienda
+// trae su tienda en /me; gerencia, la elegida en el selector de la barra.
+const tiendasGerencia = ref([])
+const nombreTiendaPos = computed(() => {
+  if (!auth.veTodasLasTiendas) return auth.nombrePuntoActual || 'Sin tienda'
+  if (auth.puntoActivo == null) return 'Todas las tiendas'
+  return tiendasGerencia.value.find((t) => t.id === auth.puntoActivo)?.nombre || '…'
+})
+onMounted(async () => {
+  if (!auth.veTodasLasTiendas) return
+  try {
+    const { data } = await api.get('/api/puntos-venta')
+    tiendasGerencia.value = data
+  } catch {
+    tiendasGerencia.value = []
+  }
+})
 
 const menuItems = getMenu()
 const categorias = getCategorias()
