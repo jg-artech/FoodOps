@@ -31,6 +31,7 @@ from foodops.db.models import (
     MetodoPago,
     Orden,
     OrdenEstado,
+    OrdenItem,
     PuntoVenta,
     TrabajoImpresion,
     Usuario,
@@ -383,10 +384,40 @@ def test_vendedor_ve_su_total_y_no_el_de_otro_vendedor_de_su_tienda(api, datos, 
     assert vista_2[ajena]["total"] == 41.0
     assert vista_2[propia]["total"] is None
 
-    # Fuera del total, la orden ajena llega igual que la ve el responsable.
+    # Fuera de los importes, la orden ajena llega igual que la ve el responsable.
     resp = {o["id"]: o for o in api.get("/api/ordenes/", headers=_auth(datos["resp_tienda"])).json()}
-    sin_total = {k: v for k, v in vista[ajena].items() if k not in ("total", "total_oculto")}
-    assert sin_total == {k: v for k, v in resp[ajena].items() if k != "total"}
+    importes = ("total", "total_oculto", "items")
+    sin_total = {k: v for k, v in vista[ajena].items() if k not in importes}
+    assert sin_total == {k: v for k, v in resp[ajena].items() if k not in importes}
+
+
+def _item_de(S, orden_id, producto, precio, tipo="producto"):
+    s = S()
+    s.add(OrdenItem(orden_id=orden_id, producto=producto, cantidad=1, precio_unitario=precio,
+                    subtotal=precio, tipo=tipo))
+    s.commit()
+    s.close()
+
+
+def test_items_de_orden_ajena_salen_sin_importes_al_vendedor(api, datos, S):
+    propia = _orden_de(S, datos["a"], datos["tomador_orden"], 45.5)
+    ajena = _orden_de(S, datos["a"], datos["tomador_orden_2"], 60.5)
+    _item_de(S, propia, "1/4 Pollo", 45.5)
+    _item_de(S, ajena, "1/4 Pollo", 45.5)
+    _item_de(S, ajena, "Cargo de entrega", 15, tipo="entrega")
+
+    vista = {o["id"]: o for o in api.get("/api/ordenes/", headers=_auth(datos["tomador_orden"])).json()}
+    assert [(i["precio_unitario"], i["subtotal"]) for i in vista[propia]["items"]] == [(45.5, 45.5)]
+    assert len(vista[ajena]["items"]) == 2
+    assert all(i["precio_unitario"] is None and i["subtotal"] is None for i in vista[ajena]["items"])
+
+    # Producto, cantidad, especiales y tipo llegan igual que al responsable.
+    resp = {o["id"]: o for o in api.get("/api/ordenes/", headers=_auth(datos["resp_tienda"])).json()}
+    sin_importes = lambda items: [  # noqa: E731
+        {k: v for k, v in i.items() if k not in ("precio_unitario", "subtotal")} for i in items
+    ]
+    assert sin_importes(vista[ajena]["items"]) == sin_importes(resp[ajena]["items"])
+    assert {i["subtotal"] for i in resp[ajena]["items"]} == {45.5, 15.0}
 
 
 def test_ordenes_sin_vendedor_tambien_ocultan_el_total_al_vendedor(api, datos):

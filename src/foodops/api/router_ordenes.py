@@ -403,7 +403,8 @@ def listar_ordenes(
     ROLES_SOLO_ORDENES_DE_HOY (vendedor): además, solo las órdenes de hoy en
     hora de Guatemala, sin parámetro que lo cambie.
     ROLES_SOLO_IMPORTES_PROPIOS (vendedor): "total" solo en las órdenes que
-    tomó él; en las demás, total = null y total_oculto = true.
+    tomó él; en las demás, total = null y total_oculto = true, y cada item
+    sale con precio_unitario = null y subtotal = null.
     """
     # Este endpoint no exige rol (lo usan cocina y reparto), así que la
     # resolución general de core.auth (que trata a gerente_central como
@@ -460,6 +461,10 @@ def listar_ordenes(
             if solo_importes_propios and o.tomada_por != current_user.user_id:
                 d["total"] = None
                 d["total_oculto"] = True
+                # Los importes de cada item permiten reconstruir el total.
+                for item in d["items"]:
+                    item["precio_unitario"] = None
+                    item["subtotal"] = None
             result.append(d)
         return result
     finally:
