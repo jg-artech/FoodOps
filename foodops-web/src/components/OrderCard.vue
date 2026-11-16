@@ -53,6 +53,7 @@
       <span class="font-bold text-orange-500">{{ totalOculto ? '—' : formatQ(orden.total) }}</span>
       <div class="flex gap-2">
         <button
+          v-if="puedeReimprimir(auth.user, orden)"
           @click="impresion.imprimir(orden)"
           :disabled="impresion.enviando"
           title="Reimprimir ticket"
@@ -77,6 +78,8 @@ import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
 import EstadoFactura from '@/components/EstadoFactura.vue'
 import HistorialImpresion from '@/components/HistorialImpresion.vue'
 import { useImpresionTicket } from '@/utils/impresionTicket.js'
+import { useAuthStore } from '@/store/index'
+import { puedeReimprimir } from '@/permisos.js'
 
 const props = defineProps({
   orden: { type: Object, required: true },
@@ -88,6 +91,7 @@ const cargo = computed(() => cargoDe(props.orden.items))
 // (total = null, total_oculto = true). Se muestra "—", no Q0.00.
 const totalOculto = computed(() => props.orden.total == null || props.orden.total_oculto === true)
 
+const auth = useAuthStore()
 const menuItems = getMenu()
 const impresion = reactive(useImpresionTicket())
 

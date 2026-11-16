@@ -22,6 +22,7 @@
               <p class="text-sm font-semibold mt-1">{{ importeOculto(orden) ? '—' : formatQ(orden.total) }}</p>
             </div>
             <button
+              v-if="puedeReimprimir(auth.user, orden)"
               @click="imprimir(orden)"
               :disabled="impresion.enviando"
               title="Reimprimir ticket"
@@ -47,11 +48,15 @@ import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
 import HistorialImpresion from '@/components/HistorialImpresion.vue'
 import EstadoFactura from '@/components/EstadoFactura.vue'
 import { useImpresionTicket } from '@/utils/impresionTicket.js'
+import { useAuthStore } from '@/store/index'
+import { puedeReimprimir } from '@/permisos.js'
 
 defineProps({
   ordenes: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
 })
+
+const auth = useAuthStore()
 
 // Un solo flujo para toda la lista; los mensajes se muestran en la fila de
 // la última orden enviada.

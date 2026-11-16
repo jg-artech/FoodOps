@@ -57,6 +57,19 @@ export const ROLES_CAJA = ['resp_tienda', 'gerente_general', 'admin']
 // router_abastecimiento.py: _ROLES_CENTRAL.
 export const ROLES_CENTRAL = ['gerente_central', 'gerente_general', 'admin']
 
+// core/permisos_ordenes.py: ROLES_SOLO_IMPORTES_PROPIOS. La API les oculta
+// los importes de las órdenes que no tomaron ellos.
+export const ROLES_SOLO_IMPORTES_PROPIOS = ['tomador_orden']
+
+// Botón de reimprimir ticket en listados de órdenes. El vendedor solo
+// reimprime las órdenes que tomó él: en las ajenas no recibe importes y el
+// ticket saldría en Q0.00. Los demás roles, cualquier orden.
+export function puedeReimprimir(usuario, orden) {
+  if (!usuario?.rol) return false
+  if (!tieneRol(usuario, ROLES_SOLO_IMPORTES_PROPIOS)) return true
+  return orden?.tomada_por != null && orden.tomada_por === usuario.user_id
+}
+
 // Pantalla de inicio según el rol.
 export function rutaInicio(usuario) {
   return tieneRol(usuario, ROLES_SOLO_POS) ? '/pos' : '/dashboard'
