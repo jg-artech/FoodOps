@@ -1,0 +1,35 @@
+"""Permisos por acción sobre órdenes: única fuente de verdad.
+
+Cada constante responde a "¿quién puede hacer ESTA acción?", no a "¿quién
+opera la tienda?". El frontend tiene una copia en foodops-web/src/permisos.js
+(solo para decidir qué mostrar); la autorización real es esta.
+
+tomador_orden (vendedor) no está en ninguna de las listas de cambio de
+estado ni de cancelación: registra órdenes y cobros, y nada más.
+"""
+
+# Pasar una orden a preparando o listo (y devolverla a pendiente): cocina y
+# superiores.
+ROLES_MARCAR_LISTO = (
+    "cocinero",
+    "resp_tienda",
+    "gerente_punto",
+    "gerente_general",
+    "admin",
+)
+
+# Pasar una orden a entregado: además de cocina y superiores, el repartidor
+# (sin él no se cierra el flujo de entrega). El repartidor no marca listo.
+ROLES_MARCAR_ENTREGADO = ("repartidor",) + ROLES_MARCAR_LISTO
+
+# Cualquier cambio de estado por PUT /api/ordenes/{id}/status. Quien no esté
+# aquí recibe 403 antes de mirar la transición pedida.
+ROLES_CAMBIAR_ESTADO_COCINA = ROLES_MARCAR_ENTREGADO
+
+# Cancelar una orden (POST /cancelar-cocina y POST /cancelar, con motivo y
+# contraseña). Son los mismos que confirman cobros en efectivo.
+ROLES_CANCELAR = ("resp_tienda", "gerente_punto", "gerente_general", "admin")
+
+# Roles cuyo listado de órdenes y de trabajos de impresión se limita a su
+# tienda y al día de hoy (hora de Guatemala), sin parámetro que lo cambie.
+ROLES_SOLO_ORDENES_DE_HOY = ("tomador_orden",)

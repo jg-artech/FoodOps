@@ -29,6 +29,8 @@ from foodops.core.auth import (
 )
 from foodops.core.auth_agente import AgenteData, hash_token_agente, requiere_agente
 from foodops.core.config import settings
+from foodops.core.permisos_ordenes import ROLES_SOLO_ORDENES_DE_HOY
+from foodops.utils.timeutils import limites_hoy_guatemala
 from foodops.db.models import (
     MetodoPago,
     TRABAJO_ESTADO_ERROR,
@@ -463,6 +465,11 @@ def listar_trabajos(
             stmt = stmt.where(TrabajoImpresion.orden_id == orden_id)
         if estado is not None:
             stmt = stmt.where(TrabajoImpresion.estado == estado)
+        # El vendedor solo ve los trabajos de hoy (hora de Guatemala) de su
+        # tienda, igual que su listado de órdenes.
+        if current_user.rol in ROLES_SOLO_ORDENES_DE_HOY:
+            inicio, fin = limites_hoy_guatemala()
+            stmt = stmt.where(TrabajoImpresion.created_at >= inicio, TrabajoImpresion.created_at < fin)
         return [_trabajo_dict(t) for t in session.execute(stmt).scalars().all()]
     finally:
         session.close()

@@ -181,13 +181,18 @@ def test_vendedor_de_centro_no_puede_pedir_las_ordenes_de_jordan(api, datos):
 # ---------------------------------------------------------------------------
 
 
-def test_vendedor_de_centro_no_puede_cancelar_una_orden_de_jordan(api, datos):
+def test_responsable_de_centro_no_puede_cambiar_el_estado_de_una_orden_de_jordan(api, datos):
+    # Antes lo probaba el vendedor cancelando por PUT /status; ahora el
+    # vendedor ya no cambia estados (403 por rol) y cancelar por ahí es 409
+    # para todos, así que el acceso entre tiendas se prueba con un rol que sí
+    # puede cambiar el estado en su propia tienda.
     r = api.put(
         f"/api/ordenes/{datos['orden_jordan']}/status",
-        json={"estado": "cancelado"},
-        headers=_auth(datos["vendedor_centro"]),
+        json={"estado": "listo"},
+        headers=_auth(datos["resp_centro"]),
     )
     assert r.status_code == 403
+    assert r.json()["detail"] == "Este recurso pertenece a otra tienda"
 
 
 def test_responsable_de_centro_no_puede_recibir_un_pedido_de_jordan(api, datos):

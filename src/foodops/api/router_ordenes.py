@@ -22,6 +22,14 @@ from foodops.core.auth import (
     resolver_punto_id,
 )
 from foodops.core.config import settings
+from foodops.core.permisos_ordenes import (
+    ROLES_CAMBIAR_ESTADO_COCINA,
+    ROLES_CANCELAR,
+    ROLES_MARCAR_ENTREGADO,
+    ROLES_MARCAR_LISTO,
+    ROLES_SOLO_ORDENES_DE_HOY,
+)
+from foodops.utils.timeutils import limites_hoy_guatemala
 from foodops.db.models import (
     ITEM_TIPO_ENTREGA,
     ITEM_TIPO_PRODUCTO,
@@ -348,6 +356,9 @@ def listar_ordenes(
     2026-10-18: el selector de "Todas las tiendas" del frontend nunca
     mostraba realmente todas, solo la tienda de casa del usuario).
     Para el resto, pedir otra tienda es 403 (antes se ignoraba en silencio).
+
+    ROLES_SOLO_ORDENES_DE_HOY (vendedor): además, solo las órdenes de hoy en
+    hora de Guatemala, sin parámetro que lo cambie.
     """
     # Este endpoint no exige rol (lo usan cocina y reparto), así que la
     # resolución general de core.auth (que trata a gerente_central como
@@ -364,6 +375,9 @@ def listar_ordenes(
         stmt = select(Orden).order_by(Orden.created_at.desc())
         if effective_punto_id is not None:
             stmt = stmt.where(Orden.punto_id == effective_punto_id)
+        if current_user.rol in ROLES_SOLO_ORDENES_DE_HOY:
+            inicio, fin = limites_hoy_guatemala()
+            stmt = stmt.where(Orden.created_at >= inicio, Orden.created_at < fin)
         # Para la pantalla de "Cobros pendientes": pedir solo las que
         # todavía no se confirmaron, en vez de traer toda la tienda y
         # filtrar en el navegador.
@@ -402,65 +416,65 @@ def listar_ordenes(
         session.close()
 
 
-# TODO IMPORTANTE (riesgo, sin cambiar en este cambio): PUT /status deja que
-# cualquier rol de operación (también cocinero, repartidor y vendedor)
-# cancele una orden sin motivo ni contraseña, incluidas las cobradas con
-# tarjeta o transferencia, y tampoco impide reactivar una orden cancelada.
-# Las pantallas ya no cancelan por aquí: cocina usa
-# POST /{orden_id}/cancelar-cocina y Órdenes (POS) usa POST /{orden_id}/cancelar,
-# los dos con motivo y contraseña. Falta cerrar la cancelación en este
-# endpoint (opción B del TODO de órdenes cobradas).
+# Quién puede pedir cada estado destino por PUT /status. "cancelado" no
+# está: se cancela solo por POST /cancelar-cocina o POST /cancelar, con
+# motivo y contraseña.
+_ROLES_POR_ESTADO_DESTINO = {
+    OrdenEstado.PENDIENTE: ROLES_MARCAR_LISTO,
+    OrdenEstado.PREPARANDO: ROLES_MARCAR_LISTO,
+    OrdenEstado.LISTO: ROLES_MARCAR_LISTO,
+    OrdenEstado.ENTREGADO: ROLES_MARCAR_ENTREGADO,
+}
+
+
 @router.put("/{orden_id}/status")
 def actualizar_estado_orden(
     orden_id: int,
     data: dict,
-    current_user: TokenData = Depends(requiere_rol(*_ROLES_OPERACION)),
+    current_user: TokenData = Depends(get_current_user),
 ):
-    """Actualizar estado de una orden (solo de la tienda del usuario)."""
+    """Cambiar el estado de cocina de una orden (solo de la tienda del usuario).
+
+    - "cancelado": 409 para todos los roles; se usa /cancelar-cocina o /cancelar.
+    - Rol fuera de ROLES_CAMBIAR_ESTADO_COCINA (p.ej. el vendedor): 403.
+    - preparando/listo/pendiente: ROLES_MARCAR_LISTO; entregado:
+      ROLES_MARCAR_ENTREGADO (el repartidor solo entrega).
+    - Una orden cancelada no se reactiva: 409.
+    """
+    nuevo_estado = data.get("estado")
+    try:
+        nuevo_estado_enum = OrdenEstado(nuevo_estado)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Estado inválido: {nuevo_estado}")
+
+    if nuevo_estado_enum == OrdenEstado.CANCELADO:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Para cancelar una orden usa Cancelar en Cocina (/cancelar-cocina) "
+                "o en Órdenes del POS (/cancelar), con motivo y contraseña"
+            ),
+        )
+    if current_user.rol not in ROLES_CAMBIAR_ESTADO_COCINA:
+        raise HTTPException(status_code=403, detail="No autorizado para cambiar el estado de cocina")
+    if current_user.rol not in _ROLES_POR_ESTADO_DESTINO[nuevo_estado_enum]:
+        raise HTTPException(
+            status_code=403,
+            detail=f"No autorizado para marcar la orden como {nuevo_estado_enum.value}",
+        )
+
     session = Session()
     try:
         orden = session.get(Orden, orden_id)
         if not orden:
             raise HTTPException(status_code=404, detail="Orden no encontrada")
         exigir_acceso_a_punto(current_user, orden.punto_id)
-        nuevo_estado = data.get("estado")
-        nuevo_estado_enum = OrdenEstado(nuevo_estado)
-
-        if nuevo_estado_enum == OrdenEstado.CANCELADO:
-            # Una vez el responsable confirmó el efectivo recibido, cancelar
-            # la orden deja de ser algo que el vendedor pueda hacer solo -
-            # es decisión de quien maneja caja. Solo aplica a efectivo: una
-            # orden con tarjeta/transferencia nace "cobrada" de inmediato
-            # (ver crear_orden) y seguía pudiéndose cancelar como siempre,
-            # sin este candado nuevo.
-            if (
-                orden.metodo_pago == MetodoPago.EFECTIVO
-                and orden.estado_cobro == ESTADO_COBRO_COBRADA
-                and current_user.rol not in _ROLES_CONFIRMAR_COBRO
-            ):
-                raise HTTPException(
-                    status_code=403,
-                    detail=(
-                        "Esta orden ya fue cobrada; solo un responsable de "
-                        "tienda o gerencia puede anularla"
-                    ),
-                )
-            registrar_auditoria(
-                session,
-                accion="ANULAR_ORDEN",
-                entidad="orden",
-                entidad_id=orden_id,
-                usuario_id=current_user.user_id,
-                punto_id=orden.punto_id,
-                detalle={"numero_orden": orden.numero_orden, "estado_cobro": orden.estado_cobro},
-            )
+        if orden.estado == OrdenEstado.CANCELADO:
+            raise HTTPException(status_code=409, detail="La orden está cancelada y no se puede reactivar")
 
         orden.estado = nuevo_estado_enum
-
         session.commit()
         return {"id": orden.id, "numero_orden": orden.numero_orden, "estado": orden.estado.value}
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Estado inválido: {nuevo_estado}")
     except HTTPException:
         raise
     except Exception as e:
@@ -470,8 +484,9 @@ def actualizar_estado_orden(
         session.close()
 
 
-# Cancelan desde cocina: los mismos que confirman cobros.
-_ROLES_CANCELAR_COCINA = _ROLES_CONFIRMAR_COBRO
+# Cancelan (cocina y POS): ver ROLES_CANCELAR en core/permisos_ordenes.py.
+# Una prueba verifica que siguen siendo los mismos que confirman cobros.
+_ROLES_CANCELAR_COCINA = ROLES_CANCELAR
 
 # Mismo mensaje y código para contraseña incorrecta y usuario bloqueado: no
 # se revela si la cuenta está bloqueada. 401: el frontend exceptúa esta ruta

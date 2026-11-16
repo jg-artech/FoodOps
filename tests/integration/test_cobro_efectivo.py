@@ -163,58 +163,38 @@ def test_orden_con_tarjeta_nace_cobrada(api, datos):
 
 
 # ---------------------------------------------------------------------------
-# Cancelación: vendedor puede cancelar pendiente, no puede cancelar cobrada
+# Cancelación: ya no pasa por PUT /status para ningún rol (409). Se cancela
+# solo con motivo y contraseña por POST /cancelar-cocina o POST /cancelar;
+# esas reglas (incluido "el vendedor no cancela" y las órdenes cobradas) las
+# cubren test_cancelar_cocina.py y test_permisos_tomador_orden.py.
 # ---------------------------------------------------------------------------
 
 
-def test_vendedor_cancela_orden_pendiente_ok(api, datos, engine):
-    orden_id = _insertar_orden(engine, datos["tienda"], estado_cobro="pendiente_recibir")
+def _estado_orden(engine, orden_id):
+    with engine.connect() as conn:
+        return conn.execute(select(Orden.estado).where(Orden.id == orden_id)).scalar_one()
+
+
+@pytest.mark.parametrize(
+    "quien, metodo, estado_cobro",
+    [
+        ("vendedor", MetodoPago.EFECTIVO, "pendiente_recibir"),
+        ("vendedor", MetodoPago.EFECTIVO, "cobrada"),
+        ("vendedor", MetodoPago.TARJETA, "cobrada"),
+        ("responsable", MetodoPago.EFECTIVO, "cobrada"),
+        ("responsable", MetodoPago.TARJETA, "cobrada"),
+    ],
+)
+def test_put_status_cancelado_da_409_y_no_cambia_la_orden(api, datos, engine, quien, metodo, estado_cobro):
+    orden_id = _insertar_orden(engine, datos["tienda"], metodo_pago=metodo, estado_cobro=estado_cobro)
     r = api.put(
         f"/api/ordenes/{orden_id}/status",
         json={"estado": "cancelado"},
-        headers=_auth(datos["vendedor"]),
+        headers=_auth(datos[quien]),
     )
-    assert r.status_code == 200
-    assert r.json()["estado"] == "cancelado"
-
-
-def test_vendedor_no_puede_cancelar_orden_cobrada(api, datos, engine):
-    orden_id = _insertar_orden(engine, datos["tienda"], estado_cobro="cobrada")
-    r = api.put(
-        f"/api/ordenes/{orden_id}/status",
-        json={"estado": "cancelado"},
-        headers=_auth(datos["vendedor"]),
-    )
-    assert r.status_code == 403
-
-
-def test_responsable_si_puede_cancelar_orden_cobrada(api, datos, engine):
-    """No estaba en la lista mínima pedida, pero es consecuencia directa de
-    la regla ("el vendedor no puede") - gerencia/responsable conservan la
-    autoridad de anular incluso una venta ya cobrada (ej. reclamo de
-    cliente), verificado explícitamente para no dejarlo como supuesto."""
-    orden_id = _insertar_orden(engine, datos["tienda"], estado_cobro="cobrada")
-    r = api.put(
-        f"/api/ordenes/{orden_id}/status",
-        json={"estado": "cancelado"},
-        headers=_auth(datos["responsable"]),
-    )
-    assert r.status_code == 200
-
-
-def test_cancelar_orden_con_tarjeta_sigue_sin_restriccion_nueva(api, datos, engine):
-    """El candado nuevo es solo para efectivo: una orden con tarjeta nace
-    "cobrada" de inmediato (no hay entrega física de efectivo que esperar),
-    y el vendedor debe poder seguir cancelándola como antes."""
-    orden_id = _insertar_orden(
-        engine, datos["tienda"], metodo_pago=MetodoPago.TARJETA, estado_cobro="cobrada"
-    )
-    r = api.put(
-        f"/api/ordenes/{orden_id}/status",
-        json={"estado": "cancelado"},
-        headers=_auth(datos["vendedor"]),
-    )
-    assert r.status_code == 200
+    assert r.status_code == 409
+    assert "/cancelar" in r.json()["detail"]
+    assert _estado_orden(engine, orden_id) == OrdenEstado.PENDIENTE
 
 
 # ---------------------------------------------------------------------------
