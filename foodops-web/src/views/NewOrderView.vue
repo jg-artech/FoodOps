@@ -94,7 +94,7 @@
         <div class="max-w-5xl mx-auto h-16 px-4 flex items-center justify-between gap-3">
           <div class="min-w-0">
             <!-- Por qué Revisar está deshabilitado, en el mismo patrón de errores -->
-            <p v-if="cart.length === 0" class="text-red-500 text-sm leading-tight whitespace-nowrap">Agrega al menos un producto</p>
+            <p v-if="cart.length === 0" class="text-red-500 text-sm leading-tight whitespace-nowrap">Agrega productos</p>
             <p v-else class="text-sm text-gray-500 leading-tight whitespace-nowrap">{{ totalItems }} artículo(s)</p>
             <p class="text-xl font-bold text-orange-500 leading-tight whitespace-nowrap">{{ formatQ(totalPrecio) }}</p>
           </div>
