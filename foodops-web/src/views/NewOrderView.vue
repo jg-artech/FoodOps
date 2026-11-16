@@ -57,8 +57,8 @@
     </div>
 
     <!-- ───── PASO 2: Seleccionar productos ───── -->
-    <!-- pb-24: deja espacio para la barra fija de abajo (64px) -->
-    <div v-if="step === 2" class="pb-24">
+    <!-- El espacio de la barra fija lo reserva el body (ver reservarEspacioBarra) -->
+    <div v-if="step === 2" class="pb-4">
       <h2 class="text-xl font-bold text-gray-800 mb-1">Seleccionar productos</h2>
       <!-- Quién atiende y en qué tienda, en una sola línea -->
       <p class="text-sm text-gray-600 truncate" :title="`${auth.user?.username} · ${nombreTiendaPos}`">
@@ -331,7 +331,7 @@
 
 <script setup>
 import { formatQ } from '@/utils/moneda.js'
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/index'
 import { getMenu, getCategorias } from '@/data/menu.js'
@@ -387,6 +387,18 @@ onMounted(cargarRecetas)
 onMounted(() => { auth.fetchMe().catch(() => {}) })
 
 const step = ref(1)
+
+// La barra fija del paso de productos mide 64px (+ zona segura en teléfonos
+// con gestos). El pie de página de App.vue queda fuera de esta vista, así que
+// el espacio se reserva en el body: así se ven los últimos productos y el pie
+// al final del scroll.
+const ESPACIO_BARRA = 'calc(64px + env(safe-area-inset-bottom))'
+function reservarEspacioBarra(activo) {
+  document.body.style.paddingBottom = activo ? ESPACIO_BARRA : ''
+}
+watch(step, (s) => reservarEspacioBarra(s === 2), { immediate: true })
+onUnmounted(() => reservarEspacioBarra(false))
+
 const loading = ref(false)
 const errorMsg = ref('')
 const ordenCreada = ref(null)
