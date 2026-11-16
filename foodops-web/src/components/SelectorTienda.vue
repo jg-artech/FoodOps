@@ -5,7 +5,7 @@
     v-if="auth.veTodasLasTiendas"
     :value="auth.puntoActivo ?? ''"
     @change="cambiar($event.target.value)"
-    class="bg-white text-orange-600 text-sm rounded px-2 py-1 font-medium"
+    class="bg-white text-orange-600 text-sm rounded px-2 min-h-11 min-[1440px]:min-h-0 min-[1440px]:py-1 font-medium whitespace-nowrap"
     title="Tienda activa"
   >
     <!-- value="" literal, NO :value="null": Vue quita del DOM un atributo
@@ -19,7 +19,7 @@
     <option v-for="t in tiendas" :key="t.id" :value="t.id">{{ t.nombre }}</option>
   </select>
   <!-- Para los demás, la tienda es informativa -->
-  <span v-else-if="auth.nombrePuntoActual" class="opacity-80 text-sm">
+  <span v-else-if="auth.nombrePuntoActual" class="opacity-80 text-sm whitespace-nowrap">
     🏪 {{ auth.nombrePuntoActual }}
   </span>
 </template>

@@ -34,3 +34,7 @@ export const ROLES_CANCELAR_COCINA = ROLES_CONFIRMAR_COBRO
 export function tieneRol(usuario, roles) {
   return !!usuario?.rol && roles.includes(usuario.rol)
 }
+
+// _ROLES_GERENCIA (router_abastecimiento.py, router_config.py, router_caja.py...):
+// reglas de abastecimiento, puntos de venta y usuarios.
+export const ROLES_GERENCIA = ['gerente_general', 'admin']
