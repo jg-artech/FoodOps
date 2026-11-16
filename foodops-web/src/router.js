@@ -22,16 +22,19 @@ import ReglasReabastecimientoView from '@/views/ReglasReabastecimientoView.vue'
 import PuntosVentaView from '@/views/PuntosVentaView.vue'
 import UsuariosView from '@/views/UsuariosView.vue'
 import CobrosPendientesView from '@/views/CobrosPendientesView.vue'
-import { ROLES_CONFIRMAR_COBRO } from '@/permisos.js'
+import {
+  ROLES_CAJA,
+  ROLES_CENTRAL,
+  ROLES_CONFIRMAR_COBRO,
+  ROLES_GERENCIA,
+  ROLES_SOLO_POS,
+  RUTAS_SOLO_POS,
+  rutaInicio,
+} from '@/permisos.js'
 
-
-// Roles que el backend ya exige para los endpoints de cada sección. Tenerlos
-// aquí evita que un rol equivocado llegue a una pantalla que solo le va a
-// devolver 403; la autorización real sigue siendo la del backend.
-const ROLES_CAJA = ['resp_tienda', 'gerente_general', 'admin']
-const ROLES_GERENCIA = ['gerente_general', 'admin']
-const ROLES_CENTRAL = ['gerente_central', 'gerente_general', 'admin']
-// ROLES_CONFIRMAR_COBRO vive en src/permisos.js (copia del backend).
+// Las listas de roles son copias de las del backend (src/permisos.js). Solo
+// evitan que alguien llegue a una pantalla que le devolvería 403: la
+// autorización real es siempre la del backend.
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -69,11 +72,15 @@ const router = createRouter({
 router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('token')
   if (to.meta.requiresAuth && !token) return next('/login')
-  if (to.path === '/login' && token) return next('/dashboard')
-  if (to.meta.roles) {
-    const rol = JSON.parse(localStorage.getItem('user') || 'null')?.rol
-    if (!to.meta.roles.includes(rol)) return next('/dashboard')
+  const usuario = JSON.parse(localStorage.getItem('user') || 'null')
+  const inicio = rutaInicio(usuario)
+  if (to.path === '/login' && token) return next(inicio)
+  // El vendedor solo navega por el POS: cualquier otra ruta (incluidas /,
+  // /dashboard y /cocina) lo devuelve a /pos antes de montar la pantalla.
+  if (token && ROLES_SOLO_POS.includes(usuario?.rol) && !RUTAS_SOLO_POS.includes(to.path)) {
+    return next('/pos')
   }
+  if (to.meta.roles && !to.meta.roles.includes(usuario?.rol)) return next(inicio)
   next()
 })
 

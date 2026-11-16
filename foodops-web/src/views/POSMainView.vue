@@ -42,7 +42,8 @@
         </div>
       </RouterLink>
 
-      <RouterLink to="/pos/cierre" class="pos-btn bg-green-600 hover:bg-green-700">
+      <!-- El vendedor no ve el cierre ni el total del día (la API también se lo niega) -->
+      <RouterLink v-if="!soloPos" to="/pos/cierre" class="pos-btn bg-green-600 hover:bg-green-700">
         <span class="text-4xl">💰</span>
         <div class="text-center">
           <p class="text-2xl font-bold">CIERRE DEL DÍA</p>
@@ -50,7 +51,7 @@
         </div>
       </RouterLink>
 
-      <RouterLink to="/pos/config" class="pos-btn bg-gray-600 hover:bg-gray-700">
+      <RouterLink v-if="!soloPos" to="/pos/config" class="pos-btn bg-gray-600 hover:bg-gray-700">
         <span class="text-4xl">⚙️</span>
         <span class="text-2xl font-bold">CONFIGURACIÓN</span>
       </RouterLink>
@@ -63,8 +64,10 @@ import { formatQ } from '@/utils/moneda.js'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/store/index'
 import api from '@/services/api'
+import { ROLES_SOLO_POS, tieneRol } from '@/permisos.js'
 
 const auth = useAuthStore()
+const soloPos = computed(() => tieneRol(auth.user, ROLES_SOLO_POS))
 const ordenes = ref([])
 const horaActual = ref('')
 let clockTimer = null

@@ -18,7 +18,7 @@
         </span>
       </button>
 
-      <RouterLink to="/dashboard" class="shrink-0">
+      <RouterLink :to="rutaInicio(auth.user)" class="shrink-0">
         <img src="/Logo.png" alt="Asados a la Leña" class="logo" />
       </RouterLink>
 
@@ -74,7 +74,7 @@ import SelectorTienda from '@/components/SelectorTienda.vue'
 import { useAuthStore } from '@/store/index'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
-import { ROLES_CONFIRMAR_COBRO, ROLES_GERENCIA, tieneRol } from '@/permisos.js'
+import { ROLES_CONFIRMAR_COBRO, ROLES_GERENCIA, ROLES_SOLO_POS, rutaInicio, tieneRol } from '@/permisos.js'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -96,8 +96,10 @@ const puedeConfirmarCobro = computed(() => tieneRol(auth.user, ROLES_CONFIRMAR_C
 const cobrosPendientes = ref(0)
 let pollCobros = null
 
-// Una sola lista para la barra de escritorio y el panel del menú.
-const enlaces = computed(() => [
+// Una sola lista para la barra de escritorio y el panel del menú. El
+// vendedor solo ve POS (el router además lo devuelve a /pos desde cualquier
+// otra ruta, y el backend le responde 403 en lo demás).
+const enlaces = computed(() => tieneRol(auth.user, ROLES_SOLO_POS) ? [{ to: '/pos', label: 'POS' }] : [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/pos', label: 'POS' },
   { to: '/ordenes', label: 'Órdenes' },

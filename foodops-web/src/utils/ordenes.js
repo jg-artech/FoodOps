@@ -37,3 +37,16 @@ export async function fetchOrdenesConCache() {
     return { ordenes: cached ? JSON.parse(cached) : [], deCache: true }
   }
 }
+
+// Mensaje para un error de PUT /api/ordenes/{id}/status. El 403 (rol sin
+// permiso) y el 409 (orden cancelada) tienen un texto propio en vez del
+// genérico.
+export function mensajeErrorEstado(e) {
+  const status = e?.response?.status
+  const detalle = e?.response?.data?.detail
+  if (status === 403) {
+    return 'No tienes permiso para cambiar el estado de esta orden. Pídeselo a cocina o al responsable de la tienda.'
+  }
+  if (status === 409 && detalle) return detalle
+  return detalle || 'No se pudo actualizar el estado de la orden.'
+}

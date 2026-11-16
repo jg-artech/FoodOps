@@ -39,6 +39,7 @@
           :orden="orden"
           :recetas="recetas"
           :puede-cancelar="puedeCancelar"
+          :puede-marcar-listo="puedeMarcarListo"
           @cambiar="cambiarEstado"
           @cancelar="ordenACancelar = $event"
         />
@@ -53,13 +54,15 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/store/index'
-import { ROLES_CANCELAR_COCINA, tieneRol } from '@/permisos.js'
+import { ROLES_CANCELAR_COCINA, ROLES_MARCAR_LISTO, tieneRol } from '@/permisos.js'
+import { mensajeErrorEstado } from '@/utils/ordenes.js'
 import CancelarOrdenModal from '@/components/CancelarOrdenModal.vue'
 import KitchenTicket from '@/components/KitchenTicket.vue'
 import api from '@/services/api'
 
 const auth = useAuthStore()
 const puedeCancelar = computed(() => tieneRol(auth.user, ROLES_CANCELAR_COCINA))
+const puedeMarcarListo = computed(() => tieneRol(auth.user, ROLES_MARCAR_LISTO))
 const ordenes = ref([])
 const conectado = ref(true)
 const horaActual = ref('')
@@ -132,7 +135,7 @@ async function cambiarEstado(orden, nuevoEstado) {
     await api.put(`/api/ordenes/${orden.id}/status`, { estado: nuevoEstado })
     quitarOrden(orden)
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al actualizar')
+    alert(mensajeErrorEstado(e))
   }
 }
 

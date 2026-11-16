@@ -29,17 +29,18 @@
     <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <OrderCard v-for="orden in ordenesFiltradas" :key="orden.id" :orden="orden">
         <template #acciones>
-          <button v-if="orden.estado === 'pendiente'"
+          <!-- Botones de estado según rol (el vendedor no ve ninguno) -->
+          <button v-if="orden.estado === 'pendiente' && puedeMarcarListo"
             @click="cambiarEstado(orden, 'preparando')"
             class="text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded font-medium">
             En prep.
           </button>
-          <button v-if="orden.estado === 'preparando'"
+          <button v-if="orden.estado === 'preparando' && puedeMarcarListo"
             @click="cambiarEstado(orden, 'listo')"
             class="text-xs bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded font-medium">
             Listo
           </button>
-          <button v-if="orden.estado === 'listo'"
+          <button v-if="orden.estado === 'listo' && puedeMarcarEntregado"
             @click="cambiarEstado(orden, 'entregado')"
             class="text-xs bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded font-medium">
             Entregado
@@ -64,7 +65,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/store/index'
 import OrderCard from '@/components/OrderCard.vue'
 import api from '@/services/api'
-import { ROLES_CANCELAR_COCINA, tieneRol } from '@/permisos.js'
+import { ROLES_CANCELAR_COCINA, ROLES_MARCAR_ENTREGADO, ROLES_MARCAR_LISTO, tieneRol } from '@/permisos.js'
+import { mensajeErrorEstado } from '@/utils/ordenes.js'
 import CancelarOrdenModal from '@/components/CancelarOrdenModal.vue'
 
 const auth = useAuthStore()
@@ -102,6 +104,8 @@ function conteo(estado) {
 // Cancelan responsable, gerentes y admin (los mismos que en cocina), con
 // motivo y contraseña por POST /cancelar. El vendedor ya no cancela aquí.
 const puedeCancelar = computed(() => tieneRol(auth.user, ROLES_CANCELAR_COCINA))
+const puedeMarcarListo = computed(() => tieneRol(auth.user, ROLES_MARCAR_LISTO))
+const puedeMarcarEntregado = computed(() => tieneRol(auth.user, ROLES_MARCAR_ENTREGADO))
 const ordenACancelar = ref(null)
 function alCancelar(orden, data) {
   orden.estado = 'cancelado'
@@ -123,7 +127,7 @@ async function cambiarEstado(orden, nuevoEstado) {
     await api.put(`/api/ordenes/${orden.id}/status`, { estado: nuevoEstado })
     orden.estado = nuevoEstado
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al actualizar estado')
+    alert(mensajeErrorEstado(e))
   }
 }
 

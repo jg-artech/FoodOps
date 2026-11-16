@@ -58,7 +58,7 @@
 
     <!-- Acciones -->
     <div class="flex gap-2 p-3 pt-0">
-      <button @click="$emit('cambiar', orden, 'listo')"
+      <button v-if="puedeMarcarListo" @click="$emit('cambiar', orden, 'listo')"
         class="flex-1 bg-green-400 hover:bg-green-300 text-green-900 font-black py-3 rounded-xl text-lg transition">
         ✓ LISTO
       </button>
@@ -86,6 +86,8 @@ const props = defineProps({
   recetas: { type: Object, default: () => ({}) },
   // ¿El usuario en sesión puede cancelar desde cocina? (ROLES_CANCELAR_COCINA)
   puedeCancelar: { type: Boolean, default: false },
+  // Solo ROLES_MARCAR_LISTO (cocina y superiores; ni vendedor ni repartidor).
+  puedeMarcarListo: { type: Boolean, default: false },
 })
 defineEmits(['cambiar', 'cancelar'])
 

@@ -43,6 +43,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/store/index'
 import { useRouter } from 'vue-router'
+import { rutaInicio } from '@/permisos.js'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -71,7 +72,7 @@ async function handleSubmit() {
   loading.value = true
   try {
     await auth.login(form.username, form.password)
-    router.push('/dashboard')
+    router.push(rutaInicio(auth.user))
   } catch (e) {
     if (!navigator.onLine) {
       error.value = 'Sin conexión a internet. Intenta cuando tengas red.'
