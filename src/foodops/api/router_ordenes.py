@@ -186,6 +186,48 @@ def _orden_dict(
     }
 
 
+# Reintentos para numero_orden. El número visible es ORD-{punto}-{segundo};
+# solo si otra orden de la misma tienda ya tomó ese número (mismo segundo) se
+# agrega un sufijo corto: -2, -3, ... -9. Las órdenes normales no cambian.
+_MAX_INTENTOS_NUMERO = 9
+_RESTRICCION_NUMERO = "uq_ordenes_punto_numero"
+
+
+def _es_choque_de_numero(error: IntegrityError) -> bool:
+    diag = getattr(error.orig, "diag", None)
+    nombre = getattr(diag, "constraint_name", None)
+    if nombre is not None:
+        return nombre == _RESTRICCION_NUMERO
+    return _RESTRICCION_NUMERO in str(error.orig)
+
+
+def _insertar_con_numero_unico(session, orden: Orden, numero_base: str) -> None:
+    """Inserta la orden con numero_base o, si choca, con numero_base-N.
+
+    Solo el INSERT de la orden va en el SAVEPOINT: si choca, se deshace ese
+    INSERT y nada más. Items, auditoría y autorización del cargo se escriben
+    después, en la transacción externa, con el número ya definitivo.
+    """
+    for intento in range(1, _MAX_INTENTOS_NUMERO + 1):
+        orden.numero_orden = numero_base if intento == 1 else f"{numero_base}-{intento}"
+        try:
+            with session.begin_nested():
+                session.add(orden)
+                session.flush()
+            return
+        except IntegrityError as e:
+            if not _es_choque_de_numero(e):
+                raise
+            logger.warning(
+                "numero_orden %s ya existe en la tienda %s (intento %d de %d)",
+                orden.numero_orden, orden.punto_id, intento, _MAX_INTENTOS_NUMERO,
+            )
+    raise HTTPException(
+        status_code=409,
+        detail="No se pudo asignar un número de orden único. Intenta de nuevo.",
+    )
+
+
 @router.post("/")
 def crear_orden(
     orden: OrdenCreate,
@@ -254,8 +296,8 @@ def crear_orden(
             ),
             tomada_por=current_user.user_id,
         )
-        session.add(nueva_orden)
-        session.flush()
+        _insertar_con_numero_unico(session, nueva_orden, numero_orden)
+        numero_orden = nueva_orden.numero_orden
 
         items_creados = []
         for item in orden.items:
