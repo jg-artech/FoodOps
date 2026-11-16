@@ -1,5 +1,6 @@
 <template>
-  <div class="max-w-2xl mx-auto px-4 py-6">
+  <!-- El paso de productos usa más ancho para la cuadrícula en horizontal -->
+  <div class="mx-auto px-4 py-6" :class="step === 2 ? 'max-w-5xl' : 'max-w-2xl'">
 
     <!-- Barra de progreso -->
     <div class="flex items-center justify-between mb-5">
@@ -63,19 +64,21 @@
 
       <div v-for="cat in categorias" :key="cat.key" class="mb-6">
         <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">{{ cat.label }}</h3>
-        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div class="grid-productos gap-3">
           <div v-for="item in itemsPorCategoria(cat.key)" :key="item.id"
-            class="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+            class="bg-white border border-gray-200 rounded-xl p-3 shadow-sm flex flex-col">
             <div class="text-2xl mb-1">{{ item.emoji }}</div>
             <p class="font-semibold text-gray-800 text-sm leading-tight">{{ item.nombre }}</p>
             <p v-if="item.contenido" class="text-xs text-gray-400 mt-0.5 leading-tight">{{ item.contenido }}</p>
             <p class="text-orange-500 font-bold mt-1 mb-2">{{ formatQ(item.precio) }}</p>
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between mt-auto">
               <button @click="quitarItem(item)"
-                class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 font-bold flex items-center justify-center text-lg">−</button>
+                :aria-label="'Quitar ' + item.nombre"
+                class="w-11 h-11 rounded-full bg-gray-100 hover:bg-gray-200 font-bold flex items-center justify-center text-xl">−</button>
               <span class="font-bold text-base w-6 text-center">{{ getTotalQty(item.id) }}</span>
               <button @click="agregarItem(item)"
-                class="w-8 h-8 rounded-full bg-orange-500 hover:bg-orange-600 text-white font-bold flex items-center justify-center text-lg">+</button>
+                :aria-label="'Agregar ' + item.nombre"
+                class="w-11 h-11 rounded-full bg-orange-500 hover:bg-orange-600 text-white font-bold flex items-center justify-center text-xl">+</button>
             </div>
           </div>
         </div>
@@ -822,4 +825,11 @@ function resetOrden() {
 <style scoped>
 .slide-enter-active, .slide-leave-active { transition: all 0.2s ease; }
 .slide-enter-from, .slide-leave-to { opacity: 0; transform: translateY(-8px); }
+
+/* 2 columnas en teléfono y tablet vertical; desde 900px, tantas como quepan
+   de 200px mínimo (4 en 1024px horizontal). */
+.grid-productos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 900px) {
+  .grid-productos { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+}
 </style>
