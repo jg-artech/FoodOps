@@ -56,7 +56,8 @@
     </div>
 
     <!-- ───── PASO 2: Seleccionar productos ───── -->
-    <div v-if="step === 2">
+    <!-- pb-24: deja espacio para la barra fija de abajo (64px) -->
+    <div v-if="step === 2" class="pb-24">
       <h2 class="text-xl font-bold text-gray-800 mb-1">Seleccionar productos</h2>
       <p class="text-sm text-gray-400 mb-5">Toca [+] para agregar</p>
 
@@ -80,16 +81,20 @@
         </div>
       </div>
 
-      <!-- Total flotante -->
-      <div class="sticky bottom-4 bg-white border border-gray-200 rounded-2xl shadow-xl p-4 flex items-center justify-between">
-        <div>
-          <p class="text-xs text-gray-400">{{ totalItems }} producto(s)</p>
-          <p class="text-2xl font-bold text-orange-500">{{ formatQ(totalPrecio) }}</p>
+      <!-- Barra fija: artículos, total y Revisar, siempre a mano -->
+      <div class="fixed inset-x-0 bottom-0 z-40 bg-white shadow-[0_-1px_0_rgba(0,0,0,0.08),0_-4px_12px_rgba(0,0,0,0.08)] pb-[env(safe-area-inset-bottom)]">
+        <div class="max-w-5xl mx-auto h-16 px-4 flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <!-- Por qué Revisar está deshabilitado, en el mismo patrón de errores -->
+            <p v-if="cart.length === 0" class="text-red-500 text-sm leading-tight whitespace-nowrap">Agrega al menos un producto</p>
+            <p v-else class="text-sm text-gray-500 leading-tight whitespace-nowrap">{{ totalItems }} artículo(s)</p>
+            <p class="text-xl font-bold text-orange-500 leading-tight whitespace-nowrap">{{ formatQ(totalPrecio) }}</p>
+          </div>
+          <button @click="step = 3" :disabled="cart.length === 0"
+            class="shrink-0 min-h-11 bg-orange-500 hover:bg-orange-600 text-white text-base font-bold px-6 rounded-xl transition disabled:opacity-40">
+            Revisar →
+          </button>
         </div>
-        <button @click="step = 3" :disabled="cart.length === 0"
-          class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-6 py-3 rounded-xl transition disabled:opacity-40">
-          Revisar →
-        </button>
       </div>
     </div>
 
