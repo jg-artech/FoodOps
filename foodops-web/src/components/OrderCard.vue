@@ -36,7 +36,7 @@
       </div>
       <p v-if="cargo" class="text-sm text-gray-700 flex justify-between">
         <span>🛵 Cargo de entrega</span>
-        <span class="font-semibold">{{ formatQ(cargo.subtotal ?? cargo.precio_unitario) }}</span>
+        <span class="font-semibold">{{ totalOculto ? '—' : formatQ(cargo.subtotal ?? cargo.precio_unitario) }}</span>
       </p>
     </div>
 
@@ -50,7 +50,7 @@
 
     <!-- Footer -->
     <div class="flex items-center justify-between mt-auto">
-      <span class="font-bold text-orange-500">{{ formatQ(orden.total) }}</span>
+      <span class="font-bold text-orange-500">{{ totalOculto ? '—' : formatQ(orden.total) }}</span>
       <div class="flex gap-2">
         <button
           @click="impresion.imprimir(orden)"
@@ -84,6 +84,9 @@ const props = defineProps({
 
 const productos = computed(() => itemsSinCargo(props.orden.items))
 const cargo = computed(() => cargoDe(props.orden.items))
+// Al vendedor la API le oculta el total de las órdenes que no tomó él
+// (total = null, total_oculto = true). Se muestra "—", no Q0.00.
+const totalOculto = computed(() => props.orden.total == null || props.orden.total_oculto === true)
 
 const menuItems = getMenu()
 const impresion = reactive(useImpresionTicket())

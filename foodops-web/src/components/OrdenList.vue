@@ -19,7 +19,7 @@
                 class="text-xs font-medium px-2 py-1 rounded-full"
                 :class="estadoClase(orden.estado)"
               >{{ orden.estado }}</span>
-              <p class="text-sm font-semibold mt-1">{{ formatQ(orden.total) }}</p>
+              <p class="text-sm font-semibold mt-1">{{ importeOculto(orden) ? '—' : formatQ(orden.total) }}</p>
             </div>
             <button
               @click="imprimir(orden)"
@@ -60,6 +60,12 @@ const filaActiva = ref(null)
 function imprimir(orden) {
   filaActiva.value = orden.id
   impresion.imprimir(orden)
+}
+
+// Al vendedor la API le oculta el total de las órdenes que no tomó él
+// (total = null, total_oculto = true). Se muestra "—", no Q0.00.
+function importeOculto(orden) {
+  return orden.total == null || orden.total_oculto === true
 }
 
 function estadoClase(estado) {
