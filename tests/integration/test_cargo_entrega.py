@@ -5,9 +5,11 @@ decimales), tope por tienda, autorización de un responsable con token de un
 solo uso atado a tienda/monto/responsable, total y cuadre calculados en el
 servidor, auditoría con antes/después y el tope editable solo por gerencia.
 
-numero_orden tiene resolución de segundos y es único por tienda: dos órdenes
-por el endpoint real en la misma tienda y el mismo segundo chocan. Por eso
-cada prueba que crea órdenes pide su propia tienda (fixture `tienda`).
+numero_orden tiene resolución de segundos y es único por tienda. Dos órdenes
+en la misma tienda y el mismo segundo ya no chocan: crear_orden reintenta con
+sufijo -2 ... -9 (ver test_numero_orden.py). Cada prueba que crea órdenes
+sigue pidiendo su propia tienda (fixture `tienda`) para que sus datos no se
+mezclen con los de otras pruebas.
 """
 
 import time

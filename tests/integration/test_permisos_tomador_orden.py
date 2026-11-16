@@ -355,9 +355,9 @@ def test_vendedor_crea_una_orden_y_la_ve_en_su_listado(api, datos):
 
 
 def _orden_de(S, punto_id, usuario, total):
-    """Orden de hoy tomada por `usuario`. Directo en la BD: por el endpoint,
-    dos órdenes de la misma tienda en el mismo segundo chocan en
-    numero_orden (fallo conocido, fuera de esta prueba)."""
+    """Orden de hoy tomada por `usuario`. Directo en la BD para fijar el
+    total y el vendedor sin pasar por el endpoint. El choque de numero_orden
+    en el mismo segundo ya está resuelto (ver test_numero_orden.py)."""
     s = S()
     o = Orden(punto_id=punto_id, numero_orden=f"PV-{uuid.uuid4().hex[:12]}", metodo_pago=MetodoPago.EFECTIVO,
               total=total, estado=OrdenEstado.PENDIENTE, estado_cobro="pendiente_recibir",
