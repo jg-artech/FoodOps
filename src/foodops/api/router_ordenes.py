@@ -27,6 +27,7 @@ from foodops.core.permisos_ordenes import (
     ROLES_CANCELAR,
     ROLES_MARCAR_ENTREGADO,
     ROLES_MARCAR_LISTO,
+    ROLES_SOLO_IMPORTES_PROPIOS,
     ROLES_SOLO_ORDENES_DE_HOY,
 )
 from foodops.utils.timeutils import limites_hoy_guatemala
@@ -359,6 +360,8 @@ def listar_ordenes(
 
     ROLES_SOLO_ORDENES_DE_HOY (vendedor): además, solo las órdenes de hoy en
     hora de Guatemala, sin parámetro que lo cambie.
+    ROLES_SOLO_IMPORTES_PROPIOS (vendedor): "total" solo en las órdenes que
+    tomó él; en las demás, total = null y total_oculto = true.
     """
     # Este endpoint no exige rol (lo usan cocina y reparto), así que la
     # resolución general de core.auth (que trata a gerente_central como
@@ -400,17 +403,22 @@ def listar_ordenes(
 
         datos_factura = _datos_factura_por_orden(session, [o.id for o in ordenes])
 
+        solo_importes_propios = current_user.rol in ROLES_SOLO_IMPORTES_PROPIOS
         result = []
         for o in ordenes:
             items = session.execute(
                 select(OrdenItem).where(OrdenItem.orden_id == o.id)
             ).scalars().all()
-            result.append(_orden_dict(
+            d = _orden_dict(
                 o, items,
                 tomada_por_nombre=nombres_por_usuario.get(o.tomada_por),
                 punto_nombre=nombres_punto.get(o.punto_id),
                 datos_factura=datos_factura.get(o.id),
-            ))
+            )
+            if solo_importes_propios and o.tomada_por != current_user.user_id:
+                d["total"] = None
+                d["total_oculto"] = True
+            result.append(d)
         return result
     finally:
         session.close()

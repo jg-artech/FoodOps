@@ -33,3 +33,8 @@ ROLES_CANCELAR = ("resp_tienda", "gerente_punto", "gerente_general", "admin")
 # Roles cuyo listado de órdenes y de trabajos de impresión se limita a su
 # tienda y al día de hoy (hora de Guatemala), sin parámetro que lo cambie.
 ROLES_SOLO_ORDENES_DE_HOY = ("tomador_orden",)
+
+# Roles que en el listado de órdenes solo ven el importe (total) de las
+# órdenes que ellos mismos tomaron; en las demás de su tienda, total = null y
+# total_oculto = true. Evita que el vendedor reconstruya el total del día.
+ROLES_SOLO_IMPORTES_PROPIOS = ("tomador_orden",)

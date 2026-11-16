@@ -78,6 +78,7 @@ def datos(S):
     out = {"a": a.id, "b": b.id, "empresa_id": e.id}
     for clave, rol, punto in [
         ("tomador_orden", UserRol.TOMADOR_ORDEN, a.id),
+        ("tomador_orden_2", UserRol.TOMADOR_ORDEN, a.id),
         ("cocinero", UserRol.COCINERO, a.id),
         ("repartidor", UserRol.REPARTIDOR, a.id),
         ("resp_tienda", UserRol.RESP_TIENDA, a.id),
@@ -350,6 +351,53 @@ def test_vendedor_crea_una_orden_y_la_ve_en_su_listado(api, datos):
     numero = r.json()["numero_orden"]
     r = api.get("/api/ordenes/", headers=_auth(datos["tomador_orden"]))
     assert numero in _numeros(r)
+
+
+def _orden_de(S, punto_id, usuario, total):
+    """Orden de hoy tomada por `usuario`. Directo en la BD: por el endpoint,
+    dos órdenes de la misma tienda en el mismo segundo chocan en
+    numero_orden (fallo conocido, fuera de esta prueba)."""
+    s = S()
+    o = Orden(punto_id=punto_id, numero_orden=f"PV-{uuid.uuid4().hex[:12]}", metodo_pago=MetodoPago.EFECTIVO,
+              total=total, estado=OrdenEstado.PENDIENTE, estado_cobro="pendiente_recibir",
+              cliente_nombre="Cliente importes", tomada_por=usuario["user_id"])
+    s.add(o)
+    s.commit()
+    oid = o.id
+    s.close()
+    return oid
+
+
+def test_vendedor_ve_su_total_y_no_el_de_otro_vendedor_de_su_tienda(api, datos, S):
+    propia = _orden_de(S, datos["a"], datos["tomador_orden"], 25)
+    ajena = _orden_de(S, datos["a"], datos["tomador_orden_2"], 41)
+
+    vista = {o["id"]: o for o in api.get("/api/ordenes/", headers=_auth(datos["tomador_orden"])).json()}
+    assert vista[propia]["total"] == 25.0
+    assert "total_oculto" not in vista[propia]
+    assert vista[ajena]["total"] is None
+    assert vista[ajena]["total_oculto"] is True
+
+    # El otro vendedor, al revés.
+    vista_2 = {o["id"]: o for o in api.get("/api/ordenes/", headers=_auth(datos["tomador_orden_2"])).json()}
+    assert vista_2[ajena]["total"] == 41.0
+    assert vista_2[propia]["total"] is None
+
+    # Fuera del total, la orden ajena llega igual que la ve el responsable.
+    resp = {o["id"]: o for o in api.get("/api/ordenes/", headers=_auth(datos["resp_tienda"])).json()}
+    sin_total = {k: v for k, v in vista[ajena].items() if k not in ("total", "total_oculto")}
+    assert sin_total == {k: v for k, v in resp[ajena].items() if k != "total"}
+
+
+def test_ordenes_sin_vendedor_tambien_ocultan_el_total_al_vendedor(api, datos):
+    vista = {o["numero_orden"]: o for o in api.get("/api/ordenes/", headers=_auth(datos["tomador_orden"])).json()}
+    assert vista[datos["numero_a_hoy"]]["total"] is None
+
+
+@pytest.mark.parametrize("rol", ["cocinero", "repartidor", "resp_tienda", "gerente_punto"])
+def test_los_demas_roles_ven_todos_los_totales(api, datos, rol):
+    ordenes = api.get("/api/ordenes/", headers=_auth(datos[rol])).json()
+    assert ordenes and all(o["total"] is not None and "total_oculto" not in o for o in ordenes)
 
 
 @pytest.mark.parametrize("ruta", ["/api/auth/me", "/api/productos-menu"])
