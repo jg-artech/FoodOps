@@ -1,24 +1,28 @@
 <template>
-  <div class="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-2 sm:p-4">
-    <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+  <!-- Centrado siempre. No se cierra al tocar fuera (evita cierres sin querer
+       en la tablet): solo con ✕, Cancelar o Escape. -->
+  <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3"
+    role="dialog" aria-modal="true" :aria-label="'Personalizar: ' + nombre">
+    <div class="caja-modal bg-white rounded-2xl w-full shadow-2xl flex flex-col">
       <!-- Header -->
-      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
-        <div>
-          <p class="font-bold text-gray-800 text-lg">Personalizar: {{ nombre }}</p>
-          <p class="text-xs text-gray-400 mt-0.5">{{ formatQ(precio) }}</p>
+      <div class="flex items-center justify-between gap-2 pl-5 pr-2 py-2 border-b border-gray-200 shrink-0">
+        <div class="min-w-0">
+          <p class="font-bold text-gray-800 text-lg leading-tight">Personalizar: {{ nombre }}</p>
+          <p class="text-sm text-gray-500">{{ formatQ(precio) }}</p>
         </div>
-        <button @click="$emit('cancelar')" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">✕</button>
+        <button type="button" @click="$emit('cancelar')" aria-label="Cerrar"
+          class="shrink-0 w-11 h-11 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 text-2xl leading-none">✕</button>
       </div>
 
-      <div class="flex-1 overflow-y-auto px-5 py-4">
+      <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4">
         <!-- Grupos de radio (elige 1) -->
         <div v-for="(grupo, gi) in gruposRadio" :key="'radio-' + gi" class="mb-5">
           <p class="text-sm font-bold text-gray-700 mb-2">🧂 {{ grupo.label }} (elige 1):</p>
-          <div class="space-y-1.5">
+          <div class="space-y-2">
             <label v-for="it in grupo.items" :key="it.item_id"
-              class="flex items-center gap-2 border rounded-xl px-3 py-2 cursor-pointer transition-all"
+              class="flex items-center gap-3 min-h-11 border rounded-xl px-3 py-2 cursor-pointer transition-all"
               :class="seleccionRadio[gi] === it.item_id ? 'border-orange-400 bg-orange-50' : 'border-gray-200'">
-              <input type="radio" :name="'grupo-' + gi" :value="it.item_id" v-model="seleccionRadio[gi]" class="accent-orange-500" />
+              <input type="radio" :name="'grupo-' + gi" :value="it.item_id" v-model="seleccionRadio[gi]" class="w-5 h-5 shrink-0 accent-orange-500" />
               <span class="text-sm text-gray-700">{{ it.nombre }}<span class="text-gray-400"> ({{ it.unidad }})</span></span>
             </label>
           </div>
@@ -29,20 +33,20 @@
         <!-- Grupos de cantidad múltiple (elige N de M, repetibles, con tope máximo) -->
         <div v-for="(grupo, gi) in gruposMulti" :key="'multi-' + gi" class="mb-5">
           <p class="text-sm font-bold text-gray-700 mb-2">🧂 {{ grupo.label }} (elige {{ grupo.min }}-{{ grupo.max }}, se puede repetir):</p>
-          <div class="space-y-1.5">
+          <div class="space-y-2">
             <div v-for="it in grupo.items" :key="it.item_id"
-              class="flex items-center justify-between gap-2 border border-gray-200 rounded-xl px-3 py-2">
+              class="flex items-center justify-between gap-2 min-h-11 border border-gray-200 rounded-xl px-3 py-1.5">
               <span class="text-sm text-gray-700">{{ it.nombre }}<span class="text-gray-400"> ({{ it.unidad }})</span></span>
               <div class="flex items-center gap-2 shrink-0">
                 <button type="button" @click="decrementarMulti(gi, it)" :disabled="cantidadDeItemMulti(gi, it) === 0"
-                  class="w-7 h-7 rounded-full border border-gray-300 text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed leading-none">−</button>
-                <span class="w-5 text-center text-sm font-semibold text-gray-700">{{ cantidadDeItemMulti(gi, it) }}</span>
+                  class="w-11 h-11 rounded-full border border-gray-300 text-gray-600 text-xl disabled:opacity-30 disabled:cursor-not-allowed leading-none">−</button>
+                <span class="w-6 text-center text-sm font-semibold text-gray-700">{{ cantidadDeItemMulti(gi, it) }}</span>
                 <button type="button" @click="incrementarMulti(gi, grupo, it)" :disabled="(seleccionMulti[gi] || []).length >= grupo.max"
-                  class="w-7 h-7 rounded-full border border-orange-300 text-orange-600 disabled:opacity-30 disabled:cursor-not-allowed leading-none">+</button>
+                  class="w-11 h-11 rounded-full border border-orange-300 text-orange-600 text-xl disabled:opacity-30 disabled:cursor-not-allowed leading-none">+</button>
               </div>
             </div>
           </div>
-          <p class="text-xs text-gray-400 mt-1.5">Seleccionadas: {{ (seleccionMulti[gi] || []).length }} / {{ grupo.max }}</p>
+          <p class="text-sm text-gray-500 mt-1.5">Seleccionadas: {{ (seleccionMulti[gi] || []).length }} / {{ grupo.max }}</p>
         </div>
 
         <hr v-if="(gruposRadio.length || gruposMulti.length) && gruposCheckbox.length" class="my-4 border-gray-100" />
@@ -50,10 +54,10 @@
         <!-- Opcionales (checkbox simple) -->
         <div v-if="gruposCheckbox.length" class="mb-5">
           <p class="text-sm font-bold text-gray-700 mb-2">📋 Opcionales:</p>
-          <div class="space-y-1.5">
+          <div class="space-y-2">
             <label v-for="it in gruposCheckbox" :key="it.item_id"
-              class="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2 cursor-pointer">
-              <input type="checkbox" v-model="seleccionCheckbox[it.item_id]" class="w-4 h-4 accent-orange-500" />
+              class="flex items-center gap-3 min-h-11 border border-gray-200 rounded-xl px-3 py-2 cursor-pointer">
+              <input type="checkbox" v-model="seleccionCheckbox[it.item_id]" class="w-5 h-5 shrink-0 accent-orange-500" />
               <span class="text-sm text-gray-700">{{ it.nombre }}<span class="text-gray-400"> ({{ it.cantidad }} {{ it.unidad }})</span></span>
             </label>
           </div>
@@ -71,13 +75,13 @@
       </div>
 
       <!-- Acciones -->
-      <div class="flex gap-3 px-5 py-4 border-t border-gray-200 shrink-0">
-        <button @click="$emit('cancelar')"
-          class="flex-1 border border-gray-300 text-gray-600 font-semibold py-2.5 rounded-xl hover:bg-gray-50">
+      <div class="flex gap-3 px-5 py-3 border-t border-gray-200 shrink-0">
+        <button type="button" @click="$emit('cancelar')"
+          class="flex-1 min-h-11 border border-gray-300 text-gray-600 font-semibold rounded-xl hover:bg-gray-50">
           Cancelar
         </button>
-        <button @click="confirmar" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl">
-          Continuar con selección
+        <button type="button" @click="confirmar" class="flex-1 min-h-11 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl">
+          Confirmar
         </button>
       </div>
     </div>
@@ -86,7 +90,7 @@
 
 <script setup>
 import { formatQ } from '@/utils/moneda.js'
-import { reactive, computed, watch } from 'vue'
+import { reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   nombre: { type: String, required: true },
@@ -120,6 +124,13 @@ function inicializar() {
   })
 }
 watch(() => props.grupos, inicializar, { immediate: true })
+
+// Escape cierra igual que ✕ / Cancelar.
+function onKeydown(e) {
+  if (e.key === 'Escape') emit('cancelar')
+}
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 // A diferencia de gruposRadio/gruposCheckbox, seleccionMulti[gi] es una lista
 // que puede tener el mismo item_id repetido (p.ej. 2x Arroz) - cada repetición
@@ -166,3 +177,8 @@ function confirmar() {
   emit('confirmar', seleccionados)
 }
 </script>
+
+<style scoped>
+/* 90dvh descuenta la barra del navegador en Android; 90vh es el respaldo. */
+.caja-modal { max-width: 560px; max-height: 90vh; max-height: 90dvh; }
+</style>
