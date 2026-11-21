@@ -820,3 +820,43 @@ def test_prueba_corte_sin_ip(monkeypatch, capsys):
     monkeypatch.delenv("FOODOPS_IMPRESORA_IP", raising=False)
     assert pc.main([]) == 2
     assert "Falta la IP" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("letra", list("ABCDEFGH"))
+def test_prueba_corte_variante_termina_con_su_comando_sin_pulso(letra):
+    from agente_impresion import prueba_corte as pc
+
+    datos = pc.datos_variante(letra)
+    assert datos.startswith(b"\x1b@")
+    assert datos.endswith(pc.VARIANTES[letra][1])
+    assert f"VARIANTE {letra}".encode() in datos
+    assert b"\x1bp" not in datos  # nunca abre el cajón
+
+
+def test_prueba_corte_variante_envia_solo_esa(capsys):
+    from agente_impresion import prueba_corte as pc
+
+    srv = socket.create_server(("127.0.0.1", 0))
+    puerto = srv.getsockname()[1]
+    recibido = bytearray()
+
+    def atender():
+        conn, _ = srv.accept()
+        with conn:
+            while chunk := conn.recv(4096):
+                recibido.extend(chunk)
+
+    hilo = threading.Thread(target=atender, daemon=True)
+    hilo.start()
+    assert pc.main(["--ip", "127.0.0.1", "--puerto", str(puerto), "--variante", "e"]) == 0
+    hilo.join(timeout=2)
+    srv.close()
+    assert bytes(recibido) == pc.datos_variante("E")
+
+
+def test_prueba_corte_lista_variantes(capsys):
+    from agente_impresion import prueba_corte as pc
+
+    assert pc.main(["--variantes"]) == 0
+    salida = capsys.readouterr().out
+    assert all(f"{l}: " in salida for l in "ABCDEFGH")
