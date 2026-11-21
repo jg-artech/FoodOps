@@ -761,3 +761,62 @@ def test_prueba_impresora_sin_ip(monkeypatch, capsys):
     monkeypatch.delenv("FOODOPS_IMPRESORA_IP", raising=False)
     assert pi.main([]) == 2
     assert "Falta la IP" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# Ticket de prueba de corte (prueba_corte.py)
+# ---------------------------------------------------------------------------
+
+
+def test_prueba_corte_termina_con_avance_y_corte_total_sin_pulso():
+    from agente_impresion import prueba_corte as pc
+
+    datos = pc.datos_de_prueba()
+    assert datos.endswith(b"\x1b\x64\x04\x1d\x56\x00")
+    assert b"\x1bp" not in datos  # nunca abre el cajón
+
+
+def test_prueba_corte_control_sin_corte():
+    from agente_impresion import prueba_corte as pc
+
+    datos = pc.datos_de_prueba(sin_corte=True)
+    assert b"\x1dV" not in datos
+    assert b"\x1bd" not in datos
+    assert pc.datos_de_prueba().startswith(datos[:20])
+
+
+def test_prueba_corte_envia_por_socket_a_mock(capsys):
+    from agente_impresion import prueba_corte as pc
+
+    srv = socket.create_server(("127.0.0.1", 0))
+    puerto = srv.getsockname()[1]
+    recibido = bytearray()
+
+    def atender():
+        conn, _ = srv.accept()
+        with conn:
+            while chunk := conn.recv(4096):
+                recibido.extend(chunk)
+
+    hilo = threading.Thread(target=atender, daemon=True)
+    hilo.start()
+    assert pc.main(["--ip", "127.0.0.1", "--puerto", str(puerto)]) == 0
+    hilo.join(timeout=2)
+    srv.close()
+    assert bytes(recibido).endswith(b"\x1b\x64\x04\x1d\x56\x00")
+    assert b"\x1bp" not in recibido
+
+
+def test_prueba_corte_mostrar_no_envia(capsys):
+    from agente_impresion import prueba_corte as pc
+
+    assert pc.main(["--mostrar"]) == 0
+    assert "1B 64 04 1D 56 00" in capsys.readouterr().out
+
+
+def test_prueba_corte_sin_ip(monkeypatch, capsys):
+    from agente_impresion import prueba_corte as pc
+
+    monkeypatch.delenv("FOODOPS_IMPRESORA_IP", raising=False)
+    assert pc.main([]) == 2
+    assert "Falta la IP" in capsys.readouterr().err

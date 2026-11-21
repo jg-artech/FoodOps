@@ -102,6 +102,17 @@ otra vez.
 `tests/unit/test_agente_impresion.py`, con impresora mock (en memoria y un
 servidor TCP en 127.0.0.1). Ninguna prueba toca una impresora real.
 
+Prueba física del corte de papel (sin backend ni token), desde `tools\`:
+
+```
+python -m agente_impresion.prueba_corte --ip <IP_IMPRESORA> --mostrar
+python -m agente_impresion.prueba_corte --ip <IP_IMPRESORA>
+python -m agente_impresion.prueba_corte --ip <IP_IMPRESORA> --sin-corte
+```
+
+El segundo imprime un ticket con los mismos bytes que el agente (termina en
+`1B 64 04 1D 56 00`); el tercero es el control, sin avance ni corte.
+
 ## Arranque automático en Windows (tarea programada)
 
 `instalar_tarea.ps1` crea (o reemplaza) la tarea programada
