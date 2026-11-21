@@ -25,17 +25,9 @@ function formatFechaTicket(str) {
   return d.toLocaleString('es-GT', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-// Alto de la página en mm a partir del alto del contenido en px (96 px por
-// pulgada): contenido + márgenes de @page (3 mm arriba y abajo) + 4 mm de
-// holgura para que la última línea no pase a una segunda página.
-export function altoPaginaMm(altoPx) {
-  return Math.ceil((Number(altoPx) || 0) * 25.4 / 96) + 10
-}
-const ALTO_PAGINA_MM_JS = altoPaginaMm.toString()
-
-export function buildTicketHtml(orden) {
+function buildTicketHtml(orden) {
   const nombreNegocio = 'Asados a la Leña'
-  const nombrePlataforma = import.meta.env?.VITE_APP_NAME || 'FoodOps'
+  const nombrePlataforma = import.meta.env.VITE_APP_NAME || 'FoodOps'
   const metodoLabel = METODOS_LABEL[orden?.metodo_pago] || orden?.metodo_pago || ''
 
   // El cargo de entrega va sin "1x": no es un producto.
@@ -67,8 +59,7 @@ export function buildTicketHtml(orden) {
 <meta charset="utf-8">
 <title>Ticket ${escapeHtml(orden?.numero_orden)}</title>
 <style>
-  /* Respaldo; el script del final la reemplaza con el alto real. */
-  @page { size: 70mm 200mm; margin: 3mm 2mm; }
+  @page { size: 70mm auto; margin: 3mm 2mm; }
   * { box-sizing: border-box; }
   body {
     width: 70mm;
@@ -89,7 +80,7 @@ export function buildTicketHtml(orden) {
   hr { border: none; border-top: 1px dashed #000; margin: 6px 0; }
 </style>
 </head>
-<body>
+<body onload="window.print()">
   <div class="center bold big">${escapeHtml(nombreNegocio)}</div>
   ${orden?.punto_nombre ? `<div class="center bold">${escapeHtml(orden.punto_nombre)}</div>` : ''}
   <div class="center muted">${escapeHtml(nombrePlataforma)}</div>
@@ -109,24 +100,12 @@ export function buildTicketHtml(orden) {
   ${bloqueNotas}
   <hr>
   <div class="center muted">¡Gracias por su compra!</div>
-<script>
-  // Chrome no acepta "auto" como alto en @page: ignora la regla y usa el
-  // papel del driver (página o rollo largo), y la impresora avanza mucho
-  // papel en blanco. Se mide el contenido y se pide una página de ese alto.
-  window.addEventListener('load', function () {
-    var s = document.createElement('style');
-    s.textContent = '@page { size: 70mm ' + (${ALTO_PAGINA_MM_JS})(document.body.scrollHeight) + 'mm; margin: 3mm 2mm; }';
-    document.head.appendChild(s);
-    window.print();
-  });
-</script>
 </body>
 </html>`
 }
 
 // Abre una ventana nueva con SOLO el HTML del ticket (sin navbar ni resto de
-// la app), con su propio @page de 70mm de ancho y el alto del contenido, e
-// imprime desde ahí. El corte lo decide el driver de Windows. Funciona
+// la app), con su propio @page a 70mm de ancho, e imprime desde ahí. Funciona
 // con cualquier impresora (térmica o normal) configurada en el navegador.
 export function imprimirTicket(orden) {
   const win = window.open('', '_blank', 'width=380,height=600')
