@@ -17,8 +17,12 @@ NEGRITA_ON = ESC + b"E\x01"
 NEGRITA_OFF = ESC + b"E\x00"
 DOBLE_ALTO = GS + b"!\x01"
 TAMANO_NORMAL = GS + b"!\x00"
-# Avanza y corta parcial (GS V 66 n).
-CORTE = GS + b"V\x42\x00"
+# Fin de ticket: avanza 4 líneas (ESC d 4) para que el texto pase la
+# cuchilla y luego corte total (GS V 0). Corte confirmado en la AON
+# PR-350WF con las herramientas del fabricante. Solo para TICKET: el
+# trabajo de cajón no avanza ni corta.
+ALIMENTAR_ANTES_CORTE = bytes([0x1B, 0x64, 0x04])
+CORTE_TOTAL = bytes([0x1D, 0x56, 0x00])
 
 # Pulso de apertura del cajón: ESC p 0 25 250. Probado físicamente en la
 # AON PR-350WF (decisión 9 de §11).
@@ -144,7 +148,7 @@ def ticket(payload: dict, ancho: int = 42, nombre_negocio: str = "Asados a la Le
         out += [_linea(t) for t in _partir(o["notas_especiales"], ancho)]
 
     out += [sep, ALINEAR_CENTRO, _linea("¡Gracias por su compra!"), ALINEAR_IZQ]
-    out += [b"\n\n\n", CORTE]
+    out += [ALIMENTAR_ANTES_CORTE, CORTE_TOTAL]
     return b"".join(out)
 
 

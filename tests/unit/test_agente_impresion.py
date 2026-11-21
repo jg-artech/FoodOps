@@ -105,12 +105,80 @@ def test_pulso_cajon_exacto():
 def test_ticket_es_escpos_con_corte_y_sin_html():
     datos = escpos.ticket({"version": 1, "orden": ORDEN})
     assert datos.startswith(b"\x1b@\x1bt\x02")       # init + CP850
-    assert datos.endswith(b"\x1dV\x42\x00")           # corte
+    assert datos.endswith(b"\x1bd\x04\x1dV\x00")       # avance + corte total
     texto = datos.decode("cp850")
     for esperado in ("ORD-1-20261018120000", "1x 1/4 Pollo", "Q85.00", "TOTAL",
                      "Efectivo", "Centro", "Atendió:", "Sin cebolla", "> pierna"):
         assert esperado in texto, esperado
     assert "<" not in texto and "html" not in texto.lower()
+
+
+ALIMENTAR = bytes([0x1B, 0x64, 0x04])     # ESC d 4
+CORTE_TOTAL = bytes([0x1D, 0x56, 0x00])   # GS V 0
+FIN_DE_TICKET = ALIMENTAR + CORTE_TOTAL
+
+
+def test_constantes_de_corte():
+    assert escpos.ALIMENTAR_ANTES_CORTE == ALIMENTAR
+    assert escpos.CORTE_TOTAL == CORTE_TOTAL
+
+
+def test_ticket_termina_con_avance_y_corte_en_ese_orden():
+    datos = escpos.ticket({"orden": ORDEN})
+    assert datos.endswith(FIN_DE_TICKET)
+    # Una sola vez y al final: ni avance ni corte en medio del ticket.
+    assert datos.count(CORTE_TOTAL) == 1 and datos.count(ALIMENTAR) == 1
+    assert datos.index(ALIMENTAR) < datos.index(CORTE_TOTAL)
+    # Justo antes del corte, el cierre de siempre.
+    cuerpo = datos[: -len(FIN_DE_TICKET)]
+    assert cuerpo.endswith("¡Gracias por su compra!\n".encode("cp850") + escpos.ALINEAR_IZQ)
+
+
+def test_ticket_por_el_camino_del_agente_lleva_corte():
+    """Lo que el agente manda a la impresora (bytes_para_trabajo) incluye el
+    corte, para verificarlo sin imprimir."""
+    datos = bytes_para_trabajo({"id": 1, "tipo": "ticket", "payload": {"orden": ORDEN}}, _config())
+    assert datos.endswith(FIN_DE_TICKET)
+
+
+def test_abrir_cajon_sin_avance_ni_corte():
+    for datos in (escpos.abrir_cajon(),
+                  bytes_para_trabajo({"id": 2, "tipo": "abrir_cajon", "payload": {}}, _config())):
+        assert datos == b"\x1b@" + PULSO
+        assert datos.endswith(PULSO)
+        assert CORTE_TOTAL not in datos and ALIMENTAR not in datos
+        assert b"\x1dV" not in datos   # ningún GS V (total ni parcial)
+
+
+def test_ciclo_ticket_con_corte_y_cajon_sin_corte():
+    api = ApiMock([
+        {"id": 1, "tipo": "ticket", "payload": {"orden": ORDEN}},
+        {"id": 2, "tipo": "abrir_cajon", "payload": {}},
+    ])
+    imp = ImpresoraMock()
+    Agente(_config(), api, imp).ciclo()
+    assert imp.enviados[0].endswith(FIN_DE_TICKET)
+    assert imp.enviados[1] == b"\x1b@" + PULSO
+    assert b"\x1dV" not in imp.enviados[1]
+
+
+def test_ticket_con_cargo_de_entrega_y_cliente_sale_igual_y_con_corte():
+    items = ORDEN["items"] + [{"producto": "Cargo de entrega", "cantidad": 1,
+                               "precio_unitario": 25.5, "tipo": "entrega"}]
+    orden = {**ORDEN, "items": items, "cliente_nombre": "María López", "total": 110.5}
+    datos = escpos.ticket({"orden": orden})
+    assert datos.endswith(FIN_DE_TICKET)
+    texto = datos[: -len(FIN_DE_TICKET)].decode("cp850")
+    # Cliente: en negrita y doble alto, debajo de la orden.
+    bloque = escpos.NEGRITA_ON + escpos.DOBLE_ALTO + "Cliente:".encode("cp850")
+    assert bloque in datos and "María López" in texto
+    assert texto.index("Orden:") < texto.index("Cliente:") < texto.index("Tipo:")
+    # Cargo de entrega: sin "1x" y con su monto.
+    linea = next(l for l in texto.split("\n") if "Cargo de entrega" in l)
+    assert "1x Cargo" not in texto and "Q25.50" in linea
+    assert "Q110.50" in texto
+    # El corte va después de todo el contenido.
+    assert datos.index(CORTE_TOTAL) > datos.index("Cargo de entrega".encode("cp850"))
 
 
 @pytest.mark.parametrize("es_domicilio", [True, False], ids=["domicilio", "para-llevar"])
