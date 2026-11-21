@@ -31,7 +31,10 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Impresora: AON PR-350WF, papel de 80 mm, ESC/POS por TCP, puerto 9100 por defecto.
 - Pulso del cajón: bytes 0x1B 0x70 0x00 0x19 0xFA.
 - Mientras una tienda tenga impresora_activa = false, el ticket se imprime con window.print() desde el navegador. Esta excepción transitoria está documentada en la sección 7 del diseño.
-- Code page: pendiente de confirmar con tools/agente_impresion/prueba_impresora.py. Hoy el texto impreso sale mal con ñ, acentos y el símbolo €.
+- Code page: CP850 (ESC t 2), precedido de FS . (0x1C 0x2E) para cancelar el modo chino, que viene activo en los DIP de la impresora. Confirmado físicamente en Centro el 2026-11-21: ñ, acentos y ¡ salen bien. CP850 no tiene €; no se usa.
+- Corte al final del ticket: ESC d 4 + GS V 0 (0x1B 0x64 0x04 0x1D 0x56 0x00). Confirmado físicamente en Centro el 2026-11-21. El trabajo abrir_cajon no avanza ni corta.
+- Prueba física del ticket del agente, sin backend ni token: python3 -m agente_impresion.prueba_corte --ip <IP_IMPRESORA> desde tools/ (también funciona desde WSL).
+- Impresión por navegador en Centro: Windows usa el driver "Generic / Text Only", que no corta y avanza una hoja completa. No se arregla desde ticket.js (se intentó y se revirtió); requiere instalar el driver POS-80 por TCP/IP o activar el agente.
 
 ## Infraestructura (sin secretos)
 - Backend: FastAPI, SQLAlchemy, Alembic, PostgreSQL 15 en Docker. Servicios de compose: db y api.
@@ -65,7 +68,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Impresora y cajón de Centro: pendientes de activar por SQL tras la prueba física (ver docs/RUNBOOK_ACTIVAR_CENTRO.md). Jordán y Auxiliar siguen desactivadas.
 
 - En producción desde 2026-11-07: facturación fase 1 (nombre obligatorio y datos fiscales), cargo de entrega con tope por tienda (Q200.00 en las 3 tiendas) y cancelación con motivo y contraseña en Órdenes y Cocina.
-- El agente de impresión NO se actualizó: escpos.py (nombre del cliente y cargo de entrega) se instala en cada tienda después de la prueba física en la PC de Centro.
+- El agente de impresión NO se actualizó en las tiendas: escpos.py (nombre del cliente, cargo de entrega, corte y cancelación del modo chino) se instala en cada tienda. La prueba física del ticket del agente en la impresora de Centro ya pasó (2026-11-21).
 
 **Seguridad pendiente**
 - El historial de Git fue reescrito (los secretos ya no están en main). Quedan pendientes: solicitud a GitHub Support para purgar los commits anteriores a 755d717; revisar alertas de Secret Scanning; revisar forks.
@@ -82,7 +85,6 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 **Pendiente de decisión**
 - Si admin debe poder vender (requiere selector de tienda en el POS) o solo administrar (recomendado).
 - Confirmar el rol de alejandro.
-- Code page de la impresora AON PR-350WF (prueba_impresora.py, pendiente de resultado en Centro).
 - Responsables y vendedores de Jordán y Auxiliar.
 
 **Pendientes**
