@@ -102,9 +102,16 @@ def test_pulso_cajon_exacto():
     assert escpos.abrir_cajon() == b"\x1b@" + PULSO
 
 
+def test_ticket_cancela_modo_chino_antes_del_code_page_y_del_texto():
+    datos = escpos.ticket({"version": 1, "orden": ORDEN})
+    assert datos.index(b"\x1c.") < datos.index(b"\x1bt\x02")
+    assert datos.index(b"\x1bt\x02") < datos.index("Leña".encode("cp850"))
+    assert escpos.abrir_cajon() == b"\x1b@" + PULSO  # el cajón no cambia
+
+
 def test_ticket_es_escpos_con_corte_y_sin_html():
     datos = escpos.ticket({"version": 1, "orden": ORDEN})
-    assert datos.startswith(b"\x1b@\x1bt\x02")       # init + CP850
+    assert datos.startswith(b"\x1b@\x1c.\x1bt\x02")  # init + sin modo chino + CP850
     assert datos.endswith(b"\x1bd\x04\x1dV\x00")       # avance + corte total
     texto = datos.decode("cp850")
     for esperado in ("ORD-1-20261018120000", "1x 1/4 Pollo", "Q85.00", "TOTAL",

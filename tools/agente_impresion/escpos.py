@@ -10,6 +10,11 @@ ESC = b"\x1b"
 GS = b"\x1d"
 
 INICIALIZAR = ESC + b"@"
+# FS . cancela el modo chino. La AON PR-350WF de Centro trae "Chinese
+# mode: YES" en sus DIP: así lee los bytes > 0x7F como GB2312 e ignora el
+# code page, y la ñ y los acentos salen mal. Probado físicamente
+# (2026-11-21): con FS . + ESC t 2 (CP850) "Leña áéíóú" sale bien.
+CANCELAR_MODO_CHINO = b"\x1c."
 CODEPAGE_CP850 = ESC + b"t\x02"
 ALINEAR_IZQ = ESC + b"a\x00"
 ALINEAR_CENTRO = ESC + b"a\x01"
@@ -19,7 +24,8 @@ DOBLE_ALTO = GS + b"!\x01"
 TAMANO_NORMAL = GS + b"!\x00"
 # Fin de ticket: avanza 4 líneas (ESC d 4) para que el texto pase la
 # cuchilla y luego corte total (GS V 0). Corte confirmado en la AON
-# PR-350WF con las herramientas del fabricante. Solo para TICKET: el
+# PR-350WF (2026-11-21, enviando estos bytes con la herramienta de prueba
+# del fabricante). Solo para TICKET: el
 # trabajo de cajón no avanza ni corta.
 ALIMENTAR_ANTES_CORTE = bytes([0x1B, 0x64, 0x04])
 CORTE_TOTAL = bytes([0x1D, 0x56, 0x00])
@@ -89,7 +95,7 @@ def ticket(payload: dict, ancho: int = 42, nombre_negocio: str = "Asados a la Le
         raise ValueError("Payload de ticket inválido: se esperaba JSON con 'orden'")
     o = payload["orden"]
     sep = _linea("-" * ancho)
-    out = [INICIALIZAR, CODEPAGE_CP850]
+    out = [INICIALIZAR, CANCELAR_MODO_CHINO, CODEPAGE_CP850]
 
     out += [ALINEAR_CENTRO, NEGRITA_ON, DOBLE_ALTO]
     out += [_linea(t) for t in _partir(nombre_negocio, ancho)]
