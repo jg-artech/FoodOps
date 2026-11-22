@@ -454,7 +454,7 @@ navegador): no puede ejecutar `buildTicketHtml()` ni interpretar CSS de
 `@page`. El backend arma un JSON con los mismos campos que ya devuelve
 `_orden_dict()` (numero_orden, items, total, cliente, método de pago,
 punto_nombre...) y **el agente es responsable de convertir eso a los bytes
-ESC/POS** (comandos de inicialización, CP850, corte de papel). Esto es
+ESC/POS** (comandos de inicialización, CP858, corte de papel). Esto es
 deliberado: si cambian de modelo de impresora en el futuro, el cambio vive
 solo en el agente, el backend no sabe nada de ESC/POS.
 

@@ -15,7 +15,11 @@ INICIALIZAR = ESC + b"@"
 # code page, y la ñ y los acentos salen mal. Probado físicamente
 # (2026-11-21): con FS . + ESC t 2 (CP850) "Leña áéíóú" sale bien.
 CANCELAR_MODO_CHINO = b"\x1c."
-CODEPAGE_CP850 = ESC + b"t\x02"
+# Code page del ticket: CP858 (ESC t 19), que es CP850 con el € en 0xD5.
+# Va después de ESC @ (que la restablece) y de FS ., antes del texto.
+CODE_PAGE = 19
+CODIFICACION = "cp858"
+SELECCIONAR_CODE_PAGE = ESC + b"t" + bytes([CODE_PAGE])
 ALINEAR_IZQ = ESC + b"a\x00"
 ALINEAR_CENTRO = ESC + b"a\x01"
 NEGRITA_ON = ESC + b"E\x01"
@@ -46,7 +50,7 @@ def _limpiar(texto) -> str:
 
 
 def _b(texto: str) -> bytes:
-    return texto.encode("cp850", errors="replace")
+    return texto.encode(CODIFICACION, errors="replace")
 
 
 def _linea(texto: str = "") -> bytes:
@@ -95,7 +99,7 @@ def ticket(payload: dict, ancho: int = 42, nombre_negocio: str = "Asados a la Le
         raise ValueError("Payload de ticket inválido: se esperaba JSON con 'orden'")
     o = payload["orden"]
     sep = _linea("-" * ancho)
-    out = [INICIALIZAR, CANCELAR_MODO_CHINO, CODEPAGE_CP850]
+    out = [INICIALIZAR, CANCELAR_MODO_CHINO, SELECCIONAR_CODE_PAGE]
 
     out += [ALINEAR_CENTRO, NEGRITA_ON, DOBLE_ALTO]
     out += [_linea(t) for t in _partir(nombre_negocio, ancho)]

@@ -104,16 +104,35 @@ def test_pulso_cajon_exacto():
 
 def test_ticket_cancela_modo_chino_antes_del_code_page_y_del_texto():
     datos = escpos.ticket({"version": 1, "orden": ORDEN})
-    assert datos.index(b"\x1c.") < datos.index(b"\x1bt\x02")
-    assert datos.index(b"\x1bt\x02") < datos.index("Leña".encode("cp850"))
+    assert datos.index(b"\x1c.") < datos.index(b"\x1bt\x13")
+    assert datos.index(b"\x1bt\x13") < datos.index("Leña".encode("cp858"))
+    assert b"\x1bt\x02" not in datos  # ya no se pide CP850
     assert escpos.abrir_cajon() == b"\x1b@" + PULSO  # el cajón no cambia
+
+
+def test_code_page_cp858():
+    assert escpos.CODE_PAGE == 19
+    assert escpos.SELECCIONAR_CODE_PAGE == b"\x1bt\x13"  # ESC t 19
+
+
+def test_texto_del_ticket_se_codifica_con_cp858():
+    linea = "Leña Jordán Atendió Porción ¿Sí? ñÑ áéíóú ÁÉÍÓÚ ¡Hola! €"
+    datos = escpos.ticket({"orden": {**ORDEN, "notas_especiales": linea}})
+    for trozo in escpos._partir(linea, 42):  # las notas se parten a 42 columnas
+        assert trozo.encode("cp858") in datos
+    assert b"\xd5" in linea.encode("cp858")  # el € existe en CP858
+    assert escpos._b(linea) == linea.encode("cp858")
+    # El texto empieza después de ESC @ + FS . + ESC t 19.
+    cabecera = b"\x1b@\x1c.\x1bt\x13"
+    assert datos.startswith(cabecera)
+    assert datos.index(cabecera) < datos.index("Asados".encode("cp858"))
 
 
 def test_ticket_es_escpos_con_corte_y_sin_html():
     datos = escpos.ticket({"version": 1, "orden": ORDEN})
-    assert datos.startswith(b"\x1b@\x1c.\x1bt\x02")  # init + sin modo chino + CP850
+    assert datos.startswith(b"\x1b@\x1c.\x1bt\x13")  # init + sin modo chino + CP858
     assert datos.endswith(b"\x1bd\x04\x1dV\x00")       # avance + corte total
-    texto = datos.decode("cp850")
+    texto = datos.decode("cp858")
     for esperado in ("ORD-1-20261018120000", "1x 1/4 Pollo", "Q85.00", "TOTAL",
                      "Efectivo", "Centro", "Atendió:", "Sin cebolla", "> pierna"):
         assert esperado in texto, esperado
@@ -138,7 +157,7 @@ def test_ticket_termina_con_avance_y_corte_en_ese_orden():
     assert datos.index(ALIMENTAR) < datos.index(CORTE_TOTAL)
     # Justo antes del corte, el cierre de siempre.
     cuerpo = datos[: -len(FIN_DE_TICKET)]
-    assert cuerpo.endswith("¡Gracias por su compra!\n".encode("cp850") + escpos.ALINEAR_IZQ)
+    assert cuerpo.endswith("¡Gracias por su compra!\n".encode("cp858") + escpos.ALINEAR_IZQ)
 
 
 def test_ticket_por_el_camino_del_agente_lleva_corte():
@@ -175,9 +194,9 @@ def test_ticket_con_cargo_de_entrega_y_cliente_sale_igual_y_con_corte():
     orden = {**ORDEN, "items": items, "cliente_nombre": "María López", "total": 110.5}
     datos = escpos.ticket({"orden": orden})
     assert datos.endswith(FIN_DE_TICKET)
-    texto = datos[: -len(FIN_DE_TICKET)].decode("cp850")
+    texto = datos[: -len(FIN_DE_TICKET)].decode("cp858")
     # Cliente: en negrita y doble alto, debajo de la orden.
-    bloque = escpos.NEGRITA_ON + escpos.DOBLE_ALTO + "Cliente:".encode("cp850")
+    bloque = escpos.NEGRITA_ON + escpos.DOBLE_ALTO + "Cliente:".encode("cp858")
     assert bloque in datos and "María López" in texto
     assert texto.index("Orden:") < texto.index("Cliente:") < texto.index("Tipo:")
     # Cargo de entrega: sin "1x" y con su monto.
@@ -185,31 +204,31 @@ def test_ticket_con_cargo_de_entrega_y_cliente_sale_igual_y_con_corte():
     assert "1x Cargo" not in texto and "Q25.50" in linea
     assert "Q110.50" in texto
     # El corte va después de todo el contenido.
-    assert datos.index(CORTE_TOTAL) > datos.index("Cargo de entrega".encode("cp850"))
+    assert datos.index(CORTE_TOTAL) > datos.index("Cargo de entrega".encode("cp858"))
 
 
 @pytest.mark.parametrize("es_domicilio", [True, False], ids=["domicilio", "para-llevar"])
 def test_ticket_muestra_el_cliente_en_negrita_debajo_de_la_orden(es_domicilio):
     orden = {**ORDEN, "es_domicilio": es_domicilio, "cliente_nombre": "María López"}
     datos = escpos.ticket({"orden": orden})
-    texto = datos.decode("cp850")
+    texto = datos.decode("cp858")
     # Una sola vez, aunque sea domicilio (antes iba en el bloque de entrega).
     assert texto.count("Cliente:") == 1
     i_orden, i_cliente, i_tipo = (texto.index(t) for t in ("Orden:", "Cliente:", "Tipo:"))
     assert i_orden < i_cliente < i_tipo
     # Negrita + doble alto justo antes del nombre, y se apagan después.
-    bloque = escpos.NEGRITA_ON + escpos.DOBLE_ALTO + "Cliente:".encode("cp850")
+    bloque = escpos.NEGRITA_ON + escpos.DOBLE_ALTO + "Cliente:".encode("cp858")
     assert bloque in datos
     fin = datos.index(bloque) + len(bloque)
     resto = datos[fin:]
-    assert "María López".encode("cp850") in resto[: resto.index(escpos.NEGRITA_OFF)]
-    assert resto.index(escpos.TAMANO_NORMAL) < resto.index("Tipo:".encode("cp850"))
+    assert "María López".encode("cp858") in resto[: resto.index(escpos.NEGRITA_OFF)]
+    assert resto.index(escpos.TAMANO_NORMAL) < resto.index("Tipo:".encode("cp858"))
 
 
 def test_ticket_cargo_de_entrega_sin_cantidad():
     items = ORDEN["items"] + [{"producto": "Cargo de entrega", "cantidad": 1,
                                "precio_unitario": 25.5, "tipo": "entrega"}]
-    texto = escpos.ticket({"orden": {**ORDEN, "items": items}}).decode("cp850")
+    texto = escpos.ticket({"orden": {**ORDEN, "items": items}}).decode("cp858")
     linea = next(l for l in texto.split("\n") if "Cargo de entrega" in l)
     assert not linea.lstrip().startswith("1x")
     assert "1x Cargo" not in texto
@@ -220,24 +239,24 @@ def test_ticket_cargo_de_entrega_sin_cantidad():
 
 def test_ticket_item_sin_tipo_sigue_con_cantidad():
     """Payload de un backend anterior a la migración 014 (sin "tipo")."""
-    texto = escpos.ticket({"orden": ORDEN}).decode("cp850")
+    texto = escpos.ticket({"orden": ORDEN}).decode("cp858")
     assert "1x 1/4 Pollo" in texto
 
 
 def test_ticket_para_llevar_no_muestra_datos_de_domicilio():
-    texto = escpos.ticket({"orden": {**ORDEN, "es_domicilio": False}}).decode("cp850")
+    texto = escpos.ticket({"orden": {**ORDEN, "es_domicilio": False}}).decode("cp858")
     assert "Para llevar" in texto
     assert "Tel:" not in texto and "Zona 1" not in texto
 
 
 def test_ticket_cliente_sin_nombre_no_falla():
     """Órdenes históricas sin nombre: la línea sale vacía, sin error."""
-    texto = escpos.ticket({"orden": {**ORDEN, "cliente_nombre": None}}).decode("cp850")
+    texto = escpos.ticket({"orden": {**ORDEN, "cliente_nombre": None}}).decode("cp858")
     assert "Cliente:" in texto
 
 
 def test_ticket_usa_montos_confirmados_por_el_responsable():
-    texto = escpos.ticket({"orden": ORDEN}).decode("cp850")
+    texto = escpos.ticket({"orden": ORDEN}).decode("cp858")
     assert "Q200.00" in texto and "Q115.00" in texto
 
 
@@ -245,7 +264,7 @@ def test_ticket_no_permite_inyectar_comandos_desde_los_datos():
     datos = escpos.ticket({"orden": ORDEN})
     assert PULSO not in datos
     assert b"\x1bp" not in datos
-    assert "JuanpúPérez" in datos.decode("cp850")  # sin los bytes de control
+    assert "JuanpúPérez" in datos.decode("cp858")  # sin los bytes de control
 
 
 def test_ticket_respeta_el_ancho():
