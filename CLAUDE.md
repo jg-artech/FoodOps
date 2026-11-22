@@ -48,7 +48,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Migración más reciente: 014_cargo_entrega (local y producción).
 
 ## Reglas de trabajo
-- No hagas git push. Jorge lo hace a mano.
+- No hagas git push sin aprobación explícita de Jorge en el mensaje actual. Jorge lo hace a mano.
 - No leas archivos .env*, respaldos .bak, tokens ni credenciales. No imprimas URLs de conexión ni secretos en la salida.
 - No modifiques foodops-web/dev-dist/sw.js.
 - No generes tokens del agente ni hagas login contra producción.
@@ -66,7 +66,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Montos en quetzales: el frontend formatea todos los importes con formatQ() de foodops-web/src/utils/moneda.js (Q1,234.50, -Q5.00). No usar "$", toFixed a mano ni Intl con GTQ. El ticket (utils/ticket.js) mantiene su propio formato con Q.
 - Tras desplegar frontend, purgar Cloudflare; los navegadores con la PWA abierta pueden necesitar cerrar y volver a abrir.
 - Cobro en efectivo verificado: el vendedor registra, el responsable confirma, el cuadre cuenta solo COBRADA.
-- Rotación de secretos completada: contraseña de la base, SECRET_KEY, JWT_SECRET y contraseña de admin. Los vendedores deben volver a iniciar sesión.
+- Rotación de secretos completada para la contraseña de la base y la de admin. SECRET_KEY y JWT_SECRET siguen pendientes de rotar.
 - Usuarios activos: admin (ADMIN, sin tienda, solo administración), vendedor1 (TOMADOR_ORDEN, Local Centro), alejandro (GERENTE_CENTRAL, sin tienda, sin POS), central_test (desactivado).
 - Local Centro: vendedor y responsable creados; flujo de venta en efectivo probado de punta a punta.
 - Centro (tienda id 2): impresora_activa = true, cajon_activo = false. El cajón no se ha comprado: no activarlo. Jordán y Auxiliar siguen desactivadas (ver docs/RUNBOOK_ACTIVAR_CENTRO.md).
