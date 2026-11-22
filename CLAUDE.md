@@ -31,8 +31,11 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Impresora: AON PR-350WF, papel de 80 mm, ESC/POS por TCP, puerto 9100 por defecto.
 - Pulso del cajón: bytes 0x1B 0x70 0x00 0x19 0xFA.
 - Mientras una tienda tenga impresora_activa = false, el ticket se imprime con window.print() desde el navegador. Esta excepción transitoria está documentada en la sección 7 del diseño.
-- Code page: CP850 (ESC t 2), precedido de FS . (0x1C 0x2E) para cancelar el modo chino, que viene activo en los DIP de la impresora. Confirmado físicamente en Centro el 2026-11-21: ñ, acentos y ¡ salen bien. CP850 no tiene €; no se usa.
-- Corte al final del ticket: ESC d 4 + GS V 0 (0x1B 0x64 0x04 0x1D 0x56 0x00). Confirmado físicamente en Centro el 2026-11-21. El trabajo abrir_cajon no avanza ni corta.
+- Code page: CP858 (ESC t 19, codificación cp858), precedido de FS . (0x1C 0x2E) para cancelar el modo chino. Validado en papel en Centro el 2026-11-22, con prueba_impresora.py y con un ticket de venta real: ñ, acentos, ¡ y € salen bien. Reemplaza a CP850 (ESC t 2), que se probó el 2026-11-21 y no tiene €.
+- Requisito de la impresora: el modo chino debe estar desactivado en el panel (DIP "Chinese mode" = NO). Si se resetea la impresora, revisar este ajuste. El agente igual envía FS . en cada ticket.
+- Corte al final del ticket: ESC d 4 + GS V 0 (0x1B 0x64 0x04 0x1D 0x56 0x00). Validado en la AON PR-350WF de Centro. El trabajo abrir_cajon no avanza ni corta.
+- Cortador trabado: la impresora puede marcar "cutter stuck". Procedimiento: FEED o reinicio de la impresora; si no destraba, girar el engranaje de la tapa indicada.
+- Prueba de code page en la PC de la tienda: python -m agente_impresion.prueba_impresora --ip <IP_IMPRESORA> desde tools/.
 - Prueba física del ticket del agente, sin backend ni token: python3 -m agente_impresion.prueba_corte --ip <IP_IMPRESORA> desde tools/ (también funciona desde WSL).
 - Ticket completo del agente confirmado en la PC del POS de Centro (2026-11-21, Python 3.13 del usuario Usuario, prueba_corte desde C:\FoodOpsAgente\tools): "Leña", "Atendió" y "¡Gracias por su compra!" salen bien; el ticket normal avanza y corta, y el de control (--sin-corte) no corta. Las variantes de corte también se probaron; el agente sigue usando la A (ESC d 4 + GS V 0).
 - Impresión por navegador en Centro: Windows usa el driver "Generic / Text Only", que no corta y avanza una hoja completa. No se arregla desde ticket.js (se intentó y se revirtió); requiere instalar el driver POS-80 por TCP/IP o activar el agente.
@@ -66,15 +69,16 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Rotación de secretos completada: contraseña de la base, SECRET_KEY, JWT_SECRET y contraseña de admin. Los vendedores deben volver a iniciar sesión.
 - Usuarios activos: admin (ADMIN, sin tienda, solo administración), vendedor1 (TOMADOR_ORDEN, Local Centro), alejandro (GERENTE_CENTRAL, sin tienda, sin POS), central_test (desactivado).
 - Local Centro: vendedor y responsable creados; flujo de venta en efectivo probado de punta a punta.
-- Impresora y cajón de Centro: pendientes de activar por SQL tras la prueba física (ver docs/RUNBOOK_ACTIVAR_CENTRO.md). Jordán y Auxiliar siguen desactivadas.
+- Centro (tienda id 2): impresora_activa = true, cajon_activo = false. El cajón no se ha comprado: no activarlo. Jordán y Auxiliar siguen desactivadas (ver docs/RUNBOOK_ACTIVAR_CENTRO.md).
 
 - En producción desde 2026-11-07: facturación fase 1 (nombre obligatorio y datos fiscales), cargo de entrega con tope por tienda (Q200.00 en las 3 tiendas) y cancelación con motivo y contraseña en Órdenes y Cocina.
-- El agente de impresión NO se actualizó en las tiendas: escpos.py (nombre del cliente, cargo de entrega, corte y cancelación del modo chino) se instala en cada tienda. La prueba física del ticket del agente en la impresora de Centro ya pasó (2026-11-21).
+- Agente de impresión en Centro: imprime tickets de venta reales con CP858 y corte (2026-11-22). escpos.py se instala a mano en cada tienda; Jordán y Auxiliar no lo tienen.
 
 **Seguridad pendiente**
 - El historial de Git fue reescrito (los secretos ya no están en main). Quedan pendientes: solicitud a GitHub Support para purgar los commits anteriores a 755d717; revisar alertas de Secret Scanning; revisar forks.
 - Hay respaldos con valores viejos en el servidor (/root/). Borrarlos cuando la producción esté estable varios días. Incluye /root/frontend-dist-previo-20261106 (frontend anterior al cambio a Q) y /root/frontend-dist-previo-20261107 (frontend anterior al despliegue de 4bff6c2).
 - Respaldo de la base previo a las migraciones 013 y 014: /root/backups/ en el servidor y ~/respaldos-foodops/ en la máquina local. Contiene datos de producción: borrarlo junto con los demás respaldos.
+- Deuda de Cloudflare: la regla "Agente impresion" deja pasar /api/impresion/agente/* sin verificar el token en Cloudflare (Skip de Browser Integrity Check). El backend sí valida el token en cada petición. Pendiente: endurecer la regla cuando el plan lo permita, o exigir un header.
 
 **Reglas aprendidas hoy (obligatorias)**
 - Nunca editar .env.production con sed ni reemplazos de texto. Para secretos, usar un script en Python que valide el formato de DATABASE_URL y DATABASE_SYNC_URL (postgresql://usuario:clave@db:5432/foodops_db) antes de escribir, y que pruebe la conexión por TCP desde la red de Docker antes de recrear api.
@@ -87,6 +91,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Si admin debe poder vender (requiere selector de tienda en el POS) o solo administrar (recomendado).
 - Confirmar el rol de alejandro.
 - Responsables y vendedores de Jordán y Auxiliar.
+- Rotación de JWT_SECRET y SECRET_KEY (ver documentación de despliegue).
 
 **Pendientes**
 - Devolución de órdenes pagadas (diseño pendiente).
