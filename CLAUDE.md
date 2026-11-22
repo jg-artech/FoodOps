@@ -34,6 +34,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Code page: CP850 (ESC t 2), precedido de FS . (0x1C 0x2E) para cancelar el modo chino, que viene activo en los DIP de la impresora. Confirmado físicamente en Centro el 2026-11-21: ñ, acentos y ¡ salen bien. CP850 no tiene €; no se usa.
 - Corte al final del ticket: ESC d 4 + GS V 0 (0x1B 0x64 0x04 0x1D 0x56 0x00). Confirmado físicamente en Centro el 2026-11-21. El trabajo abrir_cajon no avanza ni corta.
 - Prueba física del ticket del agente, sin backend ni token: python3 -m agente_impresion.prueba_corte --ip <IP_IMPRESORA> desde tools/ (también funciona desde WSL).
+- Ticket completo del agente confirmado en la PC del POS de Centro (2026-11-21, Python 3.13 del usuario Usuario, prueba_corte desde C:\FoodOpsAgente\tools): "Leña", "Atendió" y "¡Gracias por su compra!" salen bien; el ticket normal avanza y corta, y el de control (--sin-corte) no corta. Las variantes de corte también se probaron; el agente sigue usando la A (ESC d 4 + GS V 0).
 - Impresión por navegador en Centro: Windows usa el driver "Generic / Text Only", que no corta y avanza una hoja completa. No se arregla desde ticket.js (se intentó y se revirtió); requiere instalar el driver POS-80 por TCP/IP o activar el agente.
 
 ## Infraestructura (sin secretos)
