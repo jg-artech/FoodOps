@@ -25,15 +25,12 @@ export const MENU_ITEMS = [
   // COMBOS
   {
     id: 6, nombre: 'Combo Familiar',         precio: 90,  categoria: 'combos',      unidad: 'combo',   emoji: '🥘',
-    contenido: '1 pollo entero, 3 guarniciones, 5 cebollines, 1 jalapeño',
   },
   {
     id: 7, nombre: 'Super Combo',            precio: 130, categoria: 'combos',      unidad: 'combo',   emoji: '👑',
-    contenido: '1 Pollo Entero, 1 Lb Costilla, 3 guarniciones, 8 cebollines, 2 jalapeños, 1.75L Pepsi',
   },
   {
     id: 8, nombre: 'Combo Costilla Familiar',precio: 140, categoria: 'combos',      unidad: 'combo',   emoji: '🔥',
-    contenido: '3 Lb costillas, 3 guarniciones, 10 cebollín, 4 jalapeños, 1 chirmol, 1.75L Pepsi',
   },
 
   // GUARNICIONES
