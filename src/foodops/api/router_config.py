@@ -25,6 +25,14 @@ Session = sessionmaker(bind=engine)
 _ROLES_GERENCIA = ("gerente_general", "admin")
 
 
+def _normalizar_contenido(contenido):
+    """Recorta espacios; un contenido vacío se guarda como NULL (no se muestra)."""
+    if contenido is None:
+        return None
+    contenido = contenido.strip()
+    return contenido or None
+
+
 def _producto_dict(session, producto: ProductoMenu) -> dict:
     filas = session.execute(
         select(ProductoComponente, ItemInventario)
@@ -38,7 +46,7 @@ def _producto_dict(session, producto: ProductoMenu) -> dict:
         "categoria": producto.categoria,
         "tipo": producto.tipo,
         "unidad": producto.unidad,
-        "descripcion": producto.descripcion,
+        "contenido": producto.contenido,
         "activo": producto.activo,
         "componentes": [
             {
@@ -131,7 +139,7 @@ def crear_producto_config(
             categoria=body.categoria,
             tipo=tipo,
             unidad=body.unidad,
-            descripcion=body.descripcion,
+            contenido=_normalizar_contenido(body.contenido),
             activo=True,
         )
         session.add(producto)
@@ -192,7 +200,9 @@ def actualizar_producto_config(
         producto.categoria = body.categoria
         producto.tipo = "combo" if body.categoria == "combos" else "individual"
         producto.unidad = body.unidad
-        producto.descripcion = body.descripcion
+        # Solo si el cliente lo envió: un PATCH sin contenido no lo borra.
+        if "contenido" in body.model_fields_set:
+            producto.contenido = _normalizar_contenido(body.contenido)
 
         session.execute(
             ProductoComponente.__table__.delete().where(

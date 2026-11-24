@@ -173,7 +173,9 @@ class ProductoConComponentesCreate(BaseModel):
     # de dos valores que traía la spec original.
     categoria: Annotated[str, Field(max_length=30)]
     unidad: Annotated[str, Field(max_length=20)]
-    descripcion: Optional[Annotated[str, Field(max_length=200)]] = None
+    # Campo único de texto del producto. descripcion ya no existe: si llega en
+    # el body, Pydantic la ignora (extra="ignore" por defecto), sin error.
+    contenido: Optional[Annotated[str, Field(max_length=500)]] = None
     # La spec pedía min_items=1, pero ya existen productos reales sin receta
     # mapeable (Papa al vapor, Ensalada Rusa, Porción Extra - ver
     # project-stock-reabastecimiento) porque no hay item_inventario equivalente.
@@ -203,7 +205,7 @@ class ProductoConComponentesResponse(BaseModel):
     categoria: str
     tipo: str
     unidad: str
-    descripcion: Optional[str] = None
+    contenido: Optional[str] = None
     activo: bool
     componentes: List[ComponenteProductoResponse] = []
 

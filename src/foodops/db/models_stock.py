@@ -28,7 +28,10 @@ class ProductoMenu(Base):
     categoria = Column(String(30), nullable=False)
     tipo = Column(String(20), nullable=False, default="individual")
     unidad = Column(String(20), nullable=False, default="unidad")
-    descripcion = Column(String(200), nullable=True)
+    # Texto que muestran POS, órdenes y cocina (migración 015). La columna
+    # descripcion sigue en la base hasta una migración posterior, pero ya no
+    # se mapea: nada debe leerla ni escribirla.
+    contenido = Column(String(500), nullable=True)
     activo = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
