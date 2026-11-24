@@ -1,3 +1,6 @@
+import { reactive } from 'vue'
+import api from '@/services/api'
+
 export const MENU_ITEMS = [
   // POLLOS
   { id: 1,  nombre: 'Pollo Entero',         precio: 75,  categoria: 'pollos',      unidad: 'pieza',   emoji: '🍗' },
@@ -52,16 +55,90 @@ export const CATEGORIAS = [
   { key: 'extras',       label: 'Extras' },
 ]
 
-export function getMenu() {
-  try {
-    const saved = localStorage.getItem('foodops_menu')
-    if (saved) return JSON.parse(saved)
-  } catch {}
-  return MENU_ITEMS
+// ─── Menú desde la API ───
+// La fuente de verdad del catálogo (nombre, precio, categoría, unidad y
+// contenido) es GET /api/productos-menu. MENU_ITEMS ya no se usa como menú:
+// solo aporta el emoji por nombre mientras el emoji no viva en la base.
+// Si la API falla, se conserva lo último que se cargó en memoria (nunca los
+// valores escritos a mano). El arreglo es reactivo y siempre el mismo, así
+// que las vistas que lo leen se actualizan cuando llega la respuesta.
+const menuItems = reactive([])
+export const estadoMenu = reactive({ cargado: false, cargando: false, error: '' })
+let cargaEnCurso = null
+
+const EMOJIS_KEY = 'foodops_emojis'
+
+function leerEmojis() {
+  try { return JSON.parse(localStorage.getItem(EMOJIS_KEY) || '{}') } catch { return {} }
 }
 
-export function saveMenu(items) {
-  localStorage.setItem('foodops_menu', JSON.stringify(items))
+// Emoji elegido en Configuración (solo en este navegador), o el de MENU_ITEMS
+// con el mismo nombre, o el de la categoría.
+export function emojiDeProducto(producto, guardados = leerEmojis()) {
+  return guardados[producto.id]
+    || MENU_ITEMS.find((m) => m.nombre === producto.nombre)?.emoji
+    || EMOJI_DEFAULT[producto.categoria]
+    || '🍽️'
+}
+
+export function guardarEmoji(productoId, emoji) {
+  const guardados = leerEmojis()
+  guardados[productoId] = emoji
+  localStorage.setItem(EMOJIS_KEY, JSON.stringify(guardados))
+  const item = menuItems.find((i) => i.id === productoId)
+  if (item) item.emoji = emoji
+}
+
+export function cargarMenu({ forzar = false } = {}) {
+  if (cargaEnCurso) return cargaEnCurso
+  if (estadoMenu.cargado && !forzar) return Promise.resolve(menuItems)
+  estadoMenu.cargando = true
+  cargaEnCurso = api.get('/api/productos-menu')
+    .then(({ data }) => {
+      const guardados = leerEmojis()
+      menuItems.splice(0, menuItems.length, ...data.map((p) => ({ ...p, emoji: emojiDeProducto(p, guardados) })))
+      estadoMenu.cargado = true
+      estadoMenu.error = ''
+      return menuItems
+    })
+    .catch(() => {
+      estadoMenu.error = 'No se pudo cargar el menú'
+      return menuItems
+    })
+    .finally(() => {
+      estadoMenu.cargando = false
+      cargaEnCurso = null
+    })
+  return cargaEnCurso
+}
+
+// Devuelve el arreglo reactivo del menú y lo carga la primera vez.
+export function getMenu() {
+  if (!estadoMenu.cargado) cargarMenu()
+  return menuItems
+}
+
+// Producto del menú para un item de orden: por producto_menu_id si el item
+// lo trae; si no, por nombre (exacto, o el nombre más largo con el que empieza,
+// p. ej. "¼ Pollo (Pechuga+Ala)").
+export function productoDeItem(item) {
+  if (item?.producto_menu_id != null) {
+    const porId = menuItems.find((m) => m.id === item.producto_menu_id)
+    if (porId) return porId
+  }
+  const nombre = item?.producto || ''
+  if (!nombre) return null
+  const exacto = menuItems.find((m) => m.nombre === nombre)
+  if (exacto) return exacto
+  let mejor = null
+  for (const m of menuItems) {
+    if (nombre.startsWith(m.nombre) && (!mejor || m.nombre.length > mejor.nombre.length)) mejor = m
+  }
+  return mejor
+}
+
+export function contenidoDeItem(item) {
+  return productoDeItem(item)?.contenido || null
 }
 
 const EMOJI_DEFAULT = {

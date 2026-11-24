@@ -16,6 +16,11 @@
 
     <!-- ═══ PESTAÑA: MENÚ ═══ -->
     <div v-if="tab === 'menu'">
+      <p v-if="menuCarga.cargando" class="text-sm text-gray-400 mb-4">Cargando productos…</p>
+      <div v-if="menuCarga.error" class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 mb-4 flex items-center justify-between gap-3">
+        <span>{{ menuCarga.error }}</span>
+        <button @click="cargarProductos" class="shrink-0 font-semibold underline">Reintentar</button>
+      </div>
       <div v-for="cat in categorias" :key="cat.key" class="bg-white rounded-2xl border border-gray-200 shadow-sm mb-4 overflow-hidden">
         <div class="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
           <h3 class="font-bold text-gray-700">{{ cat.emoji }} {{ cat.label }}</h3>
@@ -39,10 +44,10 @@
                 class="text-xs bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 px-2 py-1.5 rounded-lg font-semibold transition shrink-0">
                 🧩
               </button>
-              <button @click="eliminarItem(item.id)" class="text-red-400 hover:text-red-600 text-lg px-1 transition">✕</button>
             </div>
-            <div v-if="item.categoria === 'combos'" class="mt-2 ml-9">
-              <input v-model="item.contenido" placeholder="Contenido del combo..."
+            <div class="mt-2 ml-9">
+              <input v-model="item.contenido" maxlength="500"
+                :placeholder="item.categoria === 'combos' ? 'Contenido del combo...' : 'Contenido (opcional)...'"
                 class="w-full border border-gray-100 rounded-lg px-2 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-gray-50" />
             </div>
             <div class="mt-1 ml-9">
@@ -73,12 +78,15 @@
       </div>
 
       <p v-if="guardadoMenu" class="text-green-600 text-sm text-center font-semibold mb-3">✓ Menú guardado</p>
+      <p v-if="errorMenu" class="text-red-500 text-sm text-center mb-3">{{ errorMenu }}</p>
       <div class="flex gap-3">
-        <button @click="guardarMenu" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition">
-          💾 Guardar menú
+        <button @click="guardarMenu" :disabled="guardandoMenu"
+          class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition disabled:opacity-40">
+          {{ guardandoMenu ? 'Guardando...' : '💾 Guardar menú' }}
         </button>
-        <button @click="resetearMenu" class="border border-gray-300 text-gray-500 text-sm px-4 py-3 rounded-xl hover:bg-gray-50 transition">
-          Restablecer
+        <button @click="descartarCambios" :disabled="guardandoMenu"
+          class="border border-gray-300 text-gray-500 text-sm px-4 py-3 rounded-xl hover:bg-gray-50 transition disabled:opacity-40">
+          Descartar cambios
         </button>
       </div>
     </div>
@@ -339,15 +347,13 @@
                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
               </div>
             </div>
-            <div v-if="nuevoModal.categoria === 'combos'">
-              <label class="text-xs text-gray-500 block mb-1">Contenido del combo</label>
-              <input v-model="nuevoModal.contenido"
-                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
-            </div>
             <div>
-              <label class="text-xs text-gray-500 block mb-1">Descripción (opcional)</label>
-              <input v-model="nuevoModal.descripcion" maxlength="200"
+              <label class="text-xs text-gray-500 block mb-1">
+                {{ nuevoModal.categoria === 'combos' ? 'Contenido del combo' : 'Contenido (opcional)' }}
+              </label>
+              <input v-model="nuevoModal.contenido" maxlength="500"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
+              <p class="text-xs text-gray-400 mt-1">Se muestra en el POS, en Órdenes y en Cocina. No se imprime en el ticket.</p>
             </div>
           </div>
 
@@ -554,7 +560,7 @@
 <script setup>
 import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, watch, onMounted } from 'vue'
-import { getMenu, saveMenu, MENU_ITEMS, getCategorias, saveCategorias, CATEGORIAS } from '@/data/menu.js'
+import { cargarMenu, guardarEmoji, emojiDeProducto, getCategorias, saveCategorias, CATEGORIAS } from '@/data/menu.js'
 import api from '@/services/api'
 
 const tabs = [
@@ -565,8 +571,60 @@ const tabs = [
 const tab = ref('menu')
 
 // ─── MENÚ ───
-const menu = reactive(JSON.parse(JSON.stringify(getMenu())))
+// Productos desde GET /api/config/productos (incluye contenido y receta). Lo
+// que se edita en línea se guarda con PATCH /api/config/productos/{id}; el
+// emoji sigue siendo local de este navegador (aún no vive en la base).
+const menu = reactive([])
+const originales = new Map() // id -> copia de lo que devolvió la API
+const menuCarga = reactive({ cargando: false, error: '' })
 const guardadoMenu = ref(false)
+const guardandoMenu = ref(false)
+const errorMenu = ref('')
+
+function aItemMenu(p) {
+  return { ...p, contenido: p.contenido || '', emoji: emojiDeProducto(p) }
+}
+
+async function cargarProductos() {
+  menuCarga.cargando = true
+  menuCarga.error = ''
+  try {
+    const { data } = await api.get('/api/config/productos')
+    originales.clear()
+    menu.splice(0, menu.length, ...data.map((p) => {
+      originales.set(p.id, JSON.parse(JSON.stringify(p)))
+      return aItemMenu(p)
+    }))
+  } catch (e) {
+    menuCarga.error = e.response?.data?.detail || 'No se pudieron cargar los productos'
+  } finally {
+    menuCarga.cargando = false
+  }
+}
+onMounted(cargarProductos)
+
+// Cuerpo completo del PATCH: el backend reemplaza la receta entera, así que
+// se reenvían los componentes que ya tiene el producto.
+function componentesParaApi(componentes) {
+  return (componentes || []).map((c) => ({
+    item_inventario_id: c.item_inventario_id ?? c.item_id,
+    cantidad: c.cantidad,
+    elegible: c.elegible,
+    grupo_elegible: c.grupo_elegible ?? null,
+    nombre_grupo: c.nombre_grupo ?? null,
+    cantidad_elegible_minima: c.cantidad_elegible_minima ?? 1,
+    cantidad_elegible_maxima: c.cantidad_elegible_maxima ?? 1,
+  }))
+}
+
+function cambioEnLinea(item) {
+  const o = originales.get(item.id)
+  if (!o) return false
+  return item.nombre.trim() !== o.nombre
+    || Number(item.precio) !== Number(o.precio)
+    || (item.unidad || '') !== (o.unidad || '')
+    || (item.contenido || '').trim() !== (o.contenido || '')
+}
 
 // Carga categorías desde localStorage (incluye las creadas por el usuario)
 const categorias = reactive(JSON.parse(JSON.stringify(getCategorias())))
@@ -575,12 +633,6 @@ const nuevaCat = reactive({ key: '', label: '', emoji: '' })
 
 function itemsPorCategoria(cat) { return menu.filter(i => i.categoria === cat) }
 function catLabel(key) { return categorias.find(c => c.key === key)?.label || key }
-
-function eliminarItem(id) {
-  if (!confirm('¿Eliminar este producto?')) return
-  const idx = menu.findIndex(i => i.id === id)
-  if (idx !== -1) menu.splice(idx, 1)
-}
 
 function agregarCategoria() {
   const key = nuevaCat.key.trim().toLowerCase().replace(/\s+/g, '_')
@@ -594,19 +646,42 @@ function agregarCategoria() {
   nuevaCat.emoji = ''
 }
 
-function guardarMenu() {
-  saveMenu(menu)
+async function guardarMenu() {
+  errorMenu.value = ''
   saveCategorias([...categorias])
+  const cambiados = menu.filter(cambioEnLinea)
+  guardandoMenu.value = true
+  const fallidos = []
+  for (const item of cambiados) {
+    const o = originales.get(item.id)
+    try {
+      const { data } = await api.patch(`/api/config/productos/${item.id}`, {
+        nombre: item.nombre.trim(),
+        precio: Number(item.precio),
+        categoria: o.categoria,
+        unidad: item.unidad || 'porción',
+        contenido: (item.contenido || '').trim() || null,
+        componentes: componentesParaApi(o.componentes),
+      })
+      originales.set(data.id, JSON.parse(JSON.stringify(data)))
+      Object.assign(item, { ...aItemMenu(data), emoji: item.emoji })
+    } catch (e) {
+      fallidos.push(`${item.nombre}: ${e.response?.data?.detail || 'error al guardar'}`)
+    }
+  }
+  guardandoMenu.value = false
+  await cargarMenu({ forzar: true })
+  if (fallidos.length) {
+    errorMenu.value = `No se guardaron: ${fallidos.join(' · ')}`
+    return
+  }
   guardadoMenu.value = true
   setTimeout(() => guardadoMenu.value = false, 2500)
 }
 
-function resetearMenu() {
-  if (!confirm('¿Restaurar el menú original? Se borrarán las categorías personalizadas.')) return
-  menu.splice(0, menu.length, ...JSON.parse(JSON.stringify(MENU_ITEMS)))
-  categorias.splice(0, categorias.length, ...JSON.parse(JSON.stringify(getCategorias())))
-  localStorage.removeItem('foodops_menu')
-  localStorage.removeItem('foodops_categorias')
+function descartarCambios() {
+  if (!confirm('¿Descartar los cambios sin guardar? Se vuelve a cargar el menú desde el servidor.')) return
+  cargarProductos()
 }
 
 // ─── COSTOS (items simples) ───
@@ -736,46 +811,37 @@ onMounted(cargarItemsInventario)
 // ─── MODAL NUEVO / EDITAR PRODUCTO (+ componentes de inventario) ───
 const nuevoModal = reactive({
   visible: false, modo: 'crear', productoId: null, categoria: '', emoji: '', nombre: '',
-  precio: '', unidad: 'porción', contenido: '', descripcion: '', componentes: [],
+  precio: '', unidad: 'porción', contenido: '', componentes: [],
   error: '', guardando: false,
 })
 
 function abrirNuevo(cat) {
   Object.assign(nuevoModal, {
     visible: true, modo: 'crear', productoId: null, categoria: cat, emoji: '', nombre: '',
-    precio: '', unidad: 'porción', contenido: '', descripcion: '', componentes: [],
+    precio: '', unidad: 'porción', contenido: '', componentes: [],
     error: '', guardando: false,
   })
 }
 
-// Abre el mismo modal en modo edición para un producto existente del menú local,
-// precargando su receta (producto_componentes) desde el backend si existe.
-async function abrirComponentes(item) {
+// Abre el mismo modal en modo edición, con los datos y la receta que trajo
+// GET /api/config/productos (lo editado en línea y aún sin guardar se conserva).
+function abrirComponentes(item) {
   Object.assign(nuevoModal, {
     visible: true, modo: 'editar', productoId: item.id, categoria: item.categoria,
     emoji: item.emoji, nombre: item.nombre, precio: item.precio, unidad: item.unidad || 'porción',
-    contenido: item.contenido || '', descripcion: '', componentes: [],
+    contenido: item.contenido || '',
+    componentes: (item.componentes || []).map((c) => ({
+      item_inventario_id: c.item_id,
+      nombre_item: c.item_nombre,
+      cantidad: c.cantidad,
+      elegible: c.elegible,
+      grupo_elegible: c.grupo_elegible ?? null,
+      nombre_grupo: c.nombre_grupo ?? null,
+      cantidad_elegible_minima: c.cantidad_elegible_minima ?? 1,
+      cantidad_elegible_maxima: c.cantidad_elegible_maxima ?? 1,
+    })),
     error: '', guardando: false,
   })
-  try {
-    const { data } = await api.get('/api/config/productos')
-    const backend = data.find((p) => p.id === item.id)
-    if (backend) {
-      nuevoModal.descripcion = backend.descripcion || ''
-      nuevoModal.componentes = backend.componentes.map((c) => ({
-        item_inventario_id: c.item_id,
-        nombre_item: c.item_nombre,
-        cantidad: c.cantidad,
-        elegible: c.elegible,
-        grupo_elegible: c.grupo_elegible ?? null,
-        nombre_grupo: c.nombre_grupo ?? null,
-        cantidad_elegible_minima: c.cantidad_elegible_minima ?? 1,
-        cantidad_elegible_maxima: c.cantidad_elegible_maxima ?? 1,
-      }))
-    }
-  } catch {
-    // Producto sin contraparte en el backend (o sin permisos) - se edita solo localmente
-  }
 }
 
 // ─── SUB-MODAL: agregar componente ───
@@ -926,16 +992,8 @@ async function confirmarNuevo() {
       precio: Number(nuevoModal.precio),
       categoria: nuevoModal.categoria,
       unidad: nuevoModal.unidad || 'porción',
-      descripcion: nuevoModal.descripcion?.trim() || null,
-      componentes: nuevoModal.componentes.map((c) => ({
-        item_inventario_id: c.item_inventario_id,
-        cantidad: c.cantidad,
-        elegible: c.elegible,
-        grupo_elegible: c.grupo_elegible ?? null,
-        nombre_grupo: c.nombre_grupo ?? null,
-        cantidad_elegible_minima: c.cantidad_elegible_minima ?? 1,
-        cantidad_elegible_maxima: c.cantidad_elegible_maxima ?? 1,
-      })),
+      contenido: nuevoModal.contenido?.trim() || null,
+      componentes: componentesParaApi(nuevoModal.componentes),
     }
 
     let productoBackend
@@ -947,27 +1005,15 @@ async function confirmarNuevo() {
       productoBackend = data
     }
 
-    if (nuevoModal.modo === 'editar') {
-      const item = menu.find((i) => i.id === productoBackend.id)
-      if (item) {
-        item.nombre = payload.nombre
-        item.precio = payload.precio
-        item.unidad = payload.unidad
-      }
-    } else {
-      const nuevo = {
-        id: productoBackend.id, // id asignado por el backend - mantiene el link con producto_componentes
-        nombre: payload.nombre,
-        precio: payload.precio,
-        categoria: nuevoModal.categoria,
-        unidad: payload.unidad,
-        emoji: nuevoModal.emoji || '🍽️',
-      }
-      if (nuevoModal.categoria === 'combos' && nuevoModal.contenido) nuevo.contenido = nuevoModal.contenido.trim()
-      menu.push(nuevo)
-    }
-    saveMenu(menu)
+    // La respuesta del backend es la fuente: nombre, precio, contenido y receta.
+    originales.set(productoBackend.id, JSON.parse(JSON.stringify(productoBackend)))
+    const emoji = nuevoModal.emoji || emojiDeProducto(productoBackend)
+    if (nuevoModal.emoji) guardarEmoji(productoBackend.id, nuevoModal.emoji)
+    const item = menu.find((i) => i.id === productoBackend.id)
+    if (item) Object.assign(item, { ...aItemMenu(productoBackend), emoji })
+    else menu.push({ ...aItemMenu(productoBackend), emoji })
     saveCategorias([...categorias])
+    cargarMenu({ forzar: true })
 
     nuevoModal.visible = false
   } catch (e) {
@@ -988,6 +1034,6 @@ const emojiOpciones = [
 const emojiModal = reactive({ visible: false, item: null, custom: '' })
 
 function cambiarEmoji(item) { emojiModal.item = item; emojiModal.custom = ''; emojiModal.visible = true }
-function seleccionarEmoji(e) { if (emojiModal.item) emojiModal.item.emoji = e; emojiModal.visible = false }
-function aplicarEmojiCustom() { if (emojiModal.item && emojiModal.custom) emojiModal.item.emoji = emojiModal.custom; emojiModal.visible = false }
+function seleccionarEmoji(e) { if (emojiModal.item) { emojiModal.item.emoji = e; guardarEmoji(emojiModal.item.id, e) } emojiModal.visible = false }
+function aplicarEmojiCustom() { if (emojiModal.item && emojiModal.custom) { emojiModal.item.emoji = emojiModal.custom; guardarEmoji(emojiModal.item.id, emojiModal.custom) } emojiModal.visible = false }
 </script>

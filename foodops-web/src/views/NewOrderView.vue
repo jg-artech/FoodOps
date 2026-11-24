@@ -66,6 +66,11 @@
         · 🏪 <span class="font-semibold">{{ nombreTiendaPos }}</span>
       </p>
       <p class="text-sm text-gray-400 mb-5">Toca [+] para agregar</p>
+      <div v-if="estadoMenu.error" class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 mb-4 flex items-center justify-between gap-3">
+        <span>{{ estadoMenu.error }}{{ menuItems.length ? ' (se muestra el último cargado)' : '' }}</span>
+        <button @click="cargarMenu({ forzar: true })" class="shrink-0 font-semibold underline">Reintentar</button>
+      </div>
+      <p v-else-if="!estadoMenu.cargado && estadoMenu.cargando" class="text-sm text-gray-400 mb-4">Cargando menú…</p>
 
       <div v-for="cat in categorias" :key="cat.key" class="mb-6">
         <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">{{ cat.label }}</h3>
@@ -335,7 +340,7 @@ import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/index'
-import { getMenu, getCategorias } from '@/data/menu.js'
+import { getMenu, getCategorias, cargarMenu, estadoMenu } from '@/data/menu.js'
 import PiezaModal from '@/components/PiezaModal.vue'
 import SelectorComponentesModal from '@/components/SelectorComponentesModal.vue'
 import api from '@/services/api'
@@ -370,18 +375,16 @@ const auth = useAuthStore()
 // Recetas (producto_menu_id -> componentes de items_inventario) para previsualizar
 // qué se descontará de inventario. Si el producto no tiene receta cargada en el
 // backend (p.ej. items de menú editados a mano vía Config), simplemente no aparece.
-const recetas = ref({})
-async function cargarRecetas() {
-  try {
-    const { data } = await api.get('/api/productos-menu')
-    const map = {}
-    for (const p of data) map[p.id] = p.componentes
-    recetas.value = map
-  } catch {
-    recetas.value = {}
-  }
-}
-onMounted(cargarRecetas)
+// Salen de la misma respuesta de GET /api/productos-menu que el menú (data/menu.js).
+const menuItems = getMenu()
+const recetas = computed(() => {
+  const map = {}
+  for (const p of menuItems) map[p.id] = p.componentes || []
+  return map
+})
+// Al abrir el POS se vuelve a pedir el menú, para ver precios y contenido
+// recién editados en Configuración. Si falla, sigue lo último en memoria.
+onMounted(() => { cargarMenu({ forzar: true }) })
 // /me trae el tope del cargo de entrega de la tienda; el usuario guardado en
 // localStorage puede ser de antes de que existiera. Si falla, el backend
 // igual exige la autorización (403) y entonces se pide.
@@ -432,7 +435,6 @@ onMounted(async () => {
   }
 })
 
-const menuItems = getMenu()
 const categorias = getCategorias()
 
 const form = reactive({

@@ -27,9 +27,9 @@
               <span :class="comp.elegible ? 'font-medium' : 'opacity-70'">{{ comp.nombre }}</span>
             </li>
           </ul>
-          <p v-else-if="getContenido(item.producto)"
+          <p v-else-if="getContenido(item)"
             class="text-xs opacity-70 ml-6 mt-0.5 leading-relaxed border-l-2 border-white/20 pl-2">
-            {{ getContenido(item.producto) }}
+            {{ getContenido(item) }}
           </p>
           <p v-if="item.especiales" class="ml-6 mt-1 text-xs font-semibold text-yellow-300">
             🧂 {{ item.especiales }}
@@ -75,7 +75,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { getMenu } from '@/data/menu.js'
+import { getMenu, contenidoDeItem } from '@/data/menu.js'
 import { itemsSinCargo } from '@/utils/cargoEntrega.js'
 
 const props = defineProps({
@@ -94,11 +94,13 @@ defineEmits(['cambiar', 'cancelar'])
 // El cargo de entrega no es algo que cocina prepare: no se muestra.
 const itemsCocina = computed(() => itemsSinCargo(props.orden.items))
 
+// Menú de GET /api/productos-menu (arreglo reactivo; se carga si nadie lo cargó).
 const menuItems = getMenu()
 
-function getContenido(nombreProducto) {
-  const found = menuItems.find(m => nombreProducto === m.nombre || nombreProducto.startsWith(m.nombre))
-  return found?.contenido || null
+// Contenido del producto desde la API: por producto_menu_id si el item lo
+// trae, si no por nombre. Sin contenido, no se muestra la línea.
+function getContenido(item) {
+  return contenidoDeItem(item)
 }
 
 // Componentes FIJOS (elegible=false) de la receta real del producto — el pollo,

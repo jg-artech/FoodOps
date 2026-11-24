@@ -59,6 +59,7 @@ import { mensajeErrorEstado } from '@/utils/ordenes.js'
 import CancelarOrdenModal from '@/components/CancelarOrdenModal.vue'
 import KitchenTicket from '@/components/KitchenTicket.vue'
 import api from '@/services/api'
+import { getMenu, cargarMenu } from '@/data/menu.js'
 
 const auth = useAuthStore()
 const puedeCancelar = computed(() => tieneRol(auth.user, ROLES_CANCELAR_COCINA))
@@ -74,17 +75,14 @@ let clockTimer = null
 // muestre TODOS los componentes de la orden (no solo la guarnición elegida que
 // ya viene en el nombre del item). Se carga una sola vez; la receta de cada
 // producto no cambia mientras la pantalla de cocina está abierta.
-const recetas = ref({})
-async function cargarRecetas() {
-  try {
-    const { data } = await api.get('/api/productos-menu')
-    const map = {}
-    for (const p of data) map[p.id] = p.componentes
-    recetas.value = map
-  } catch {
-    recetas.value = {}
-  }
-}
+// Sale de la misma carga de GET /api/productos-menu que el contenido de cada
+// producto (data/menu.js), así cocina hace una sola petición.
+const menuItems = getMenu()
+const recetas = computed(() => {
+  const map = {}
+  for (const p of menuItems) map[p.id] = p.componentes || []
+  return map
+})
 
 function playBell() {
   try {
@@ -142,7 +140,7 @@ async function cambiarEstado(orden, nuevoEstado) {
 onMounted(() => {
   actualizarHora()
   clockTimer = setInterval(actualizarHora, 1000)
-  cargarRecetas()
+  cargarMenu({ forzar: true })
   fetchOrdenes()
   pollTimer = setInterval(fetchOrdenes, 2000)
 })

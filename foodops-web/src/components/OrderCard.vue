@@ -30,8 +30,8 @@
         <p class="text-sm text-gray-800 font-semibold">
           <span class="text-orange-500 font-bold">{{ item.cantidad }}×</span> {{ item.producto }}
         </p>
-        <p v-if="getContenido(item.producto)" class="text-xs text-gray-500 ml-4 mt-0.5 leading-relaxed">
-          📦 {{ getContenido(item.producto) }}
+        <p v-if="getContenido(item)" class="text-xs text-gray-500 ml-4 mt-0.5 leading-relaxed">
+          📦 {{ getContenido(item) }}
         </p>
       </div>
       <p v-if="cargo" class="text-sm text-gray-700 flex justify-between">
@@ -72,7 +72,7 @@
 <script setup>
 import { formatQ } from '@/utils/moneda.js'
 import { computed, reactive } from 'vue'
-import { getMenu } from '@/data/menu.js'
+import { getMenu, contenidoDeItem } from '@/data/menu.js'
 import { cargoDe, itemsSinCargo } from '@/utils/cargoEntrega.js'
 import EstadoImpresionTicket from '@/components/EstadoImpresionTicket.vue'
 import EstadoFactura from '@/components/EstadoFactura.vue'
@@ -92,12 +92,14 @@ const cargo = computed(() => cargoDe(props.orden.items))
 const totalOculto = computed(() => props.orden.total == null || props.orden.total_oculto === true)
 
 const auth = useAuthStore()
-const menuItems = getMenu()
+// Carga el menú (GET /api/productos-menu) si nadie lo cargó todavía.
+getMenu()
 const impresion = reactive(useImpresionTicket())
 
-function getContenido(nombreProducto) {
-  const found = menuItems.find(m => nombreProducto === m.nombre || nombreProducto.startsWith(m.nombre))
-  return found?.contenido || null
+// Contenido del producto desde la API: por producto_menu_id si el item lo
+// trae, si no por nombre. Sin contenido, no se muestra la línea.
+function getContenido(item) {
+  return contenidoDeItem(item)
 }
 
 const horaFormato = computed(() => {
