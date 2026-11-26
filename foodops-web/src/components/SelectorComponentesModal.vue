@@ -15,41 +15,46 @@
       </div>
 
       <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4">
-        <!-- Grupos de radio (elige 1) -->
-        <div v-for="(grupo, gi) in gruposRadio" :key="'radio-' + gi" class="mb-5">
-          <p class="text-sm font-bold text-gray-700 mb-2">🧂 {{ grupo.label }} (elige 1):</p>
-          <div class="space-y-2">
-            <label v-for="it in grupo.items" :key="it.item_id"
-              class="flex items-center gap-3 min-h-11 border rounded-xl px-3 py-2 cursor-pointer transition-all"
-              :class="seleccionRadio[gi] === it.item_id ? 'border-orange-400 bg-orange-50' : 'border-gray-200'">
-              <input type="radio" :name="'grupo-' + gi" :value="it.item_id" v-model="seleccionRadio[gi]" class="w-5 h-5 shrink-0 accent-orange-500" />
-              <span class="text-sm text-gray-700">{{ it.nombre }}<span class="text-gray-400"> ({{ it.unidad }})</span></span>
-            </label>
-          </div>
-        </div>
+        <!-- Grupos en el orden de la receta (grupo 1, 2, …), sea "elige 1" o
+             "elige N". Antes iban primero todos los "elige 1": en Combo
+             Familiar, bebidas salía antes que Guarniciones. -->
+        <template v-for="(grupo, n) in gruposOrdenados" :key="'grupo-' + grupo.gi">
+          <hr v-if="n > 0" class="my-4 border-gray-100" />
 
-        <hr v-if="gruposRadio.length && gruposMulti.length" class="my-4 border-gray-100" />
-
-        <!-- Grupos de cantidad múltiple (elige N de M, repetibles, con tope máximo) -->
-        <div v-for="(grupo, gi) in gruposMulti" :key="'multi-' + gi" class="mb-5">
-          <p class="text-sm font-bold text-gray-700 mb-2">🧂 {{ grupo.label }} (elige {{ grupo.min }}-{{ grupo.max }}, se puede repetir):</p>
-          <div class="space-y-2">
-            <div v-for="it in grupo.items" :key="it.item_id"
-              class="flex items-center justify-between gap-2 min-h-11 border border-gray-200 rounded-xl px-3 py-1.5">
-              <span class="text-sm text-gray-700">{{ it.nombre }}<span class="text-gray-400"> ({{ it.unidad }})</span></span>
-              <div class="flex items-center gap-2 shrink-0">
-                <button type="button" @click="decrementarMulti(gi, it)" :disabled="cantidadDeItemMulti(gi, it) === 0"
-                  class="w-11 h-11 rounded-full border border-gray-300 text-gray-600 text-xl disabled:opacity-30 disabled:cursor-not-allowed leading-none">−</button>
-                <span class="w-6 text-center text-sm font-semibold text-gray-700">{{ cantidadDeItemMulti(gi, it) }}</span>
-                <button type="button" @click="incrementarMulti(gi, grupo, it)" :disabled="(seleccionMulti[gi] || []).length >= grupo.max"
-                  class="w-11 h-11 rounded-full border border-orange-300 text-orange-600 text-xl disabled:opacity-30 disabled:cursor-not-allowed leading-none">+</button>
-              </div>
+          <!-- elige 1 -->
+          <div v-if="grupo.tipo === 'radio'" class="mb-5">
+            <p class="text-sm font-bold text-gray-700 mb-2">🧂 {{ grupo.label }} (elige 1):</p>
+            <div class="space-y-2">
+              <label v-for="it in grupo.items" :key="it.item_id"
+                class="flex items-center gap-3 min-h-11 border rounded-xl px-3 py-2 cursor-pointer transition-all"
+                :class="seleccionRadio[grupo.gi] === it.item_id ? 'border-orange-400 bg-orange-50' : 'border-gray-200'">
+                <input type="radio" :name="'grupo-' + grupo.gi" :value="it.item_id" v-model="seleccionRadio[grupo.gi]" class="w-5 h-5 shrink-0 accent-orange-500" />
+                <span class="text-sm text-gray-700">{{ it.nombre }}<span class="text-gray-400"> ({{ it.unidad }})</span></span>
+              </label>
             </div>
           </div>
-          <p class="text-sm text-gray-500 mt-1.5">Seleccionadas: {{ (seleccionMulti[gi] || []).length }} / {{ grupo.max }}</p>
-        </div>
 
-        <hr v-if="(gruposRadio.length || gruposMulti.length) && gruposCheckbox.length" class="my-4 border-gray-100" />
+          <!-- elige N de M, repetibles, con tope máximo -->
+          <div v-else class="mb-5">
+            <p class="text-sm font-bold text-gray-700 mb-2">🧂 {{ grupo.label }} (elige {{ grupo.min }}-{{ grupo.max }}, se puede repetir):</p>
+            <div class="space-y-2">
+              <div v-for="it in grupo.items" :key="it.item_id"
+                class="flex items-center justify-between gap-2 min-h-11 border border-gray-200 rounded-xl px-3 py-1.5">
+                <span class="text-sm text-gray-700">{{ it.nombre }}<span class="text-gray-400"> ({{ it.unidad }})</span></span>
+                <div class="flex items-center gap-2 shrink-0">
+                  <button type="button" @click="decrementarMulti(grupo.gi, it)" :disabled="cantidadDeItemMulti(grupo.gi, it) === 0"
+                    class="w-11 h-11 rounded-full border border-gray-300 text-gray-600 text-xl disabled:opacity-30 disabled:cursor-not-allowed leading-none">−</button>
+                  <span class="w-6 text-center text-sm font-semibold text-gray-700">{{ cantidadDeItemMulti(grupo.gi, it) }}</span>
+                  <button type="button" @click="incrementarMulti(grupo.gi, grupo, it)" :disabled="(seleccionMulti[grupo.gi] || []).length >= grupo.max"
+                    class="w-11 h-11 rounded-full border border-orange-300 text-orange-600 text-xl disabled:opacity-30 disabled:cursor-not-allowed leading-none">+</button>
+                </div>
+              </div>
+            </div>
+            <p class="text-sm text-gray-500 mt-1.5">Seleccionadas: {{ (seleccionMulti[grupo.gi] || []).length }} / {{ grupo.max }}</p>
+          </div>
+        </template>
+
+        <hr v-if="gruposOrdenados.length && gruposCheckbox.length" class="my-4 border-gray-100" />
 
         <!-- Opcionales (checkbox simple) -->
         <div v-if="gruposCheckbox.length" class="mb-5">
@@ -104,23 +109,31 @@ const props = defineProps({
 })
 const emit = defineEmits(['confirmar', 'cancelar'])
 
-const gruposRadio = computed(() => props.grupos.filter((g) => (g.max ?? 1) === 1 && g.items.length > 1))
+// gi = posición del grupo en props.grupos (orden de la receta); es la clave
+// de seleccionRadio y seleccionMulti.
+const gruposOrdenados = computed(() => props.grupos
+  .map((g, gi) => ({ ...g, gi, tipo: (g.max ?? 1) > 1 ? 'multi' : 'radio' }))
+  .filter((g) => g.tipo === 'multi' || g.items.length > 1))
+const gruposRadio = computed(() => gruposOrdenados.value.filter((g) => g.tipo === 'radio'))
+const gruposMulti = computed(() => gruposOrdenados.value.filter((g) => g.tipo === 'multi'))
+// Grupos de un solo item con max 1: opcionales, al final.
 const gruposCheckbox = computed(() => props.grupos.filter((g) => (g.max ?? 1) === 1 && g.items.length === 1).map((g) => g.items[0]))
-const gruposMulti = computed(() => props.grupos.filter((g) => (g.max ?? 1) > 1))
 
 const seleccionRadio = reactive({})
 const seleccionCheckbox = reactive({})
 const seleccionMulti = reactive({})
 
 function inicializar() {
-  gruposRadio.value.forEach((g, gi) => {
-    seleccionRadio[gi] = g.items[0]?.item_id ?? null
+  for (const k of Object.keys(seleccionRadio)) delete seleccionRadio[k]
+  for (const k of Object.keys(seleccionMulti)) delete seleccionMulti[k]
+  gruposRadio.value.forEach((g) => {
+    seleccionRadio[g.gi] = g.items[0]?.item_id ?? null
   })
   gruposCheckbox.value.forEach((it) => {
     seleccionCheckbox[it.item_id] = true // opcionales vienen marcados por defecto
   })
-  gruposMulti.value.forEach((g, gi) => {
-    seleccionMulti[gi] = []
+  gruposMulti.value.forEach((g) => {
+    seleccionMulti[g.gi] = []
   })
 }
 watch(() => props.grupos, inicializar, { immediate: true })
@@ -159,15 +172,15 @@ function decrementarMulti(gi, item) {
 
 function confirmar() {
   const seleccionados = []
-  gruposRadio.value.forEach((g, gi) => {
-    const elegido = g.items.find((it) => it.item_id === seleccionRadio[gi])
+  gruposRadio.value.forEach((g) => {
+    const elegido = g.items.find((it) => it.item_id === seleccionRadio[g.gi])
     if (elegido) seleccionados.push(elegido)
   })
   gruposCheckbox.value.forEach((it) => {
     if (seleccionCheckbox[it.item_id]) seleccionados.push(it)
   })
-  for (const [gi, grupo] of gruposMulti.value.entries()) {
-    const elegidos = seleccionMulti[gi] || []
+  for (const grupo of gruposMulti.value) {
+    const elegidos = seleccionMulti[grupo.gi] || []
     if (elegidos.length < grupo.min) {
       alert(`${grupo.label}: debes elegir mín. ${grupo.min} opción(es)`)
       return
