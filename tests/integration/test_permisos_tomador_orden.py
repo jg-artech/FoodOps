@@ -439,7 +439,7 @@ def test_los_demas_roles_ven_todos_los_totales(api, datos, rol):
     assert ordenes and all(o["total"] is not None and "total_oculto" not in o for o in ordenes)
 
 
-@pytest.mark.parametrize("ruta", ["/api/auth/me", "/api/productos-menu"])
+@pytest.mark.parametrize("ruta", ["/api/auth/me", "/api/productos-menu", "/api/config/categorias"])
 def test_vendedor_lee_lo_que_necesita_el_pos(api, datos, ruta):
     r = api.get(ruta, headers=_auth(datos["tomador_orden"]))
     assert r.status_code == 200
@@ -459,6 +459,8 @@ PERMITIDAS_VENDEDOR = {
     ("POST", "/api/ordenes/transacciones/"),
     ("PUT", "/api/ordenes/{orden_id}/datos-factura"),
     ("GET", "/api/productos-menu"),
+    # Categorías activas y su orden para Nueva orden (migración 017); solo lectura.
+    ("GET", "/api/config/categorias"),
     ("POST", "/api/impresion/ticket"),
     ("GET", "/api/impresion/trabajos"),
     ("POST", "/api/impresion/trabajos/{trabajo_id}/reintentar"),
