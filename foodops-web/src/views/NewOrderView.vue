@@ -340,7 +340,7 @@ import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/index'
-import { getMenu, getCategorias, cargarMenu, estadoMenu } from '@/data/menu.js'
+import { getMenu, getCategorias, cargarMenu, estadoMenu, ordenarCategoriasPOS, ordenarPorPrecioDesc } from '@/data/menu.js'
 import PiezaModal from '@/components/PiezaModal.vue'
 import SelectorComponentesModal from '@/components/SelectorComponentesModal.vue'
 import api from '@/services/api'
@@ -435,7 +435,7 @@ onMounted(async () => {
   }
 })
 
-const categorias = getCategorias()
+const categorias = ordenarCategoriasPOS(getCategorias())
 
 const form = reactive({
   tipo: '',
@@ -596,7 +596,7 @@ const componentesPreview = computed(() => {
 })
 
 function itemsPorCategoria(cat) {
-  return menuItems.filter(i => i.categoria === cat)
+  return ordenarPorPrecioDesc(menuItems.filter(i => i.categoria === cat))
 }
 
 function getTotalQty(id) {

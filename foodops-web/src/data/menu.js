@@ -150,6 +150,23 @@ export function getCategorias() {
   return CATEGORIAS.map(c => ({ ...c, emoji: EMOJI_DEFAULT[c.key] || '📦' }))
 }
 
+// Orden fijo del POS (nueva orden): Combos, Costillas, Pollos, Guarniciones
+// y Bebidas. Las demás categorías van después, en el orden guardado. Dentro
+// de cada una, del precio mayor al menor (empate: por nombre).
+export const ORDEN_CATEGORIAS_POS = ['combos', 'costillas', 'pollos', 'guarniciones', 'bebidas']
+
+export function ordenarCategoriasPOS(cats) {
+  const pos = (c) => {
+    const i = ORDEN_CATEGORIAS_POS.indexOf(c.key)
+    return i === -1 ? ORDEN_CATEGORIAS_POS.length : i
+  }
+  return cats.map((c, i) => [c, i]).sort((a, b) => pos(a[0]) - pos(b[0]) || a[1] - b[1]).map(([c]) => c)
+}
+
+export function ordenarPorPrecioDesc(items) {
+  return [...items].sort((a, b) => Number(b.precio) - Number(a.precio) || String(a.nombre).localeCompare(String(b.nombre), 'es'))
+}
+
 export function saveCategorias(cats) {
   localStorage.setItem('foodops_categorias', JSON.stringify(cats))
 }
