@@ -44,11 +44,14 @@ export const MENU_ITEMS = [
   { id: 14, nombre: 'Porción Extra',         precio: 5,   categoria: 'extras',      unidad: 'porción', emoji: '➕' },
 ]
 
+// Solo de respaldo: si GET /api/config/categorias nunca respondió en este
+// navegador. La fuente es la tabla categorias_menu (migración 017).
 export const CATEGORIAS = [
-  { key: 'pollos',       label: 'Pollos' },
-  { key: 'costillas',    label: 'Costillas' },
   { key: 'combos',       label: 'Combos' },
+  { key: 'costillas',    label: 'Costillas' },
+  { key: 'pollos',       label: 'Pollos' },
   { key: 'guarniciones', label: 'Guarniciones' },
+  { key: 'bebidas',      label: 'Bebidas' },
   { key: 'extras',       label: 'Extras' },
 ]
 
@@ -139,34 +142,66 @@ export function contenidoDeItem(item) {
 }
 
 const EMOJI_DEFAULT = {
-  pollos: '🍗', costillas: '🥓', combos: '🥘', guarniciones: '🥔', extras: '➕',
+  pollos: '🍗', costillas: '🥓', combos: '🥘', guarniciones: '🥔', bebidas: '🥤', extras: '➕',
 }
 
-export function getCategorias() {
+// ─── Categorías desde la API ───
+// GET /api/config/categorias devuelve las activas en orden de posición (la
+// define gerencia en Configuración). Se guarda la última respuesta en este
+// navegador para seguir vendiendo sin conexión; si nunca respondió, se usa
+// CATEGORIAS. La lista vieja de 'foodops_categorias' (por navegador) ya no se
+// usa.
+const CATEGORIAS_CACHE_KEY = 'foodops_categorias_api'
+const categoriasMenu = reactive([])
+export const estadoCategorias = reactive({ cargado: false, cargando: false, error: '' })
+let cargaCategorias = null
+
+export function aCategoria(c) {
+  return { id: c.id, key: c.clave, label: c.nombre, emoji: c.emoji || EMOJI_DEFAULT[c.clave] || '📦',
+    posicion: c.posicion, activo: c.activo }
+}
+
+function categoriasDeRespaldo() {
   try {
-    const saved = localStorage.getItem('foodops_categorias')
-    if (saved) return JSON.parse(saved)
+    const guardadas = JSON.parse(localStorage.getItem(CATEGORIAS_CACHE_KEY) || 'null')
+    if (Array.isArray(guardadas) && guardadas.length) return guardadas
   } catch {}
-  return CATEGORIAS.map(c => ({ ...c, emoji: EMOJI_DEFAULT[c.key] || '📦' }))
+  return CATEGORIAS.map((c) => ({ ...c, emoji: EMOJI_DEFAULT[c.key] || '📦', activo: true }))
 }
 
-// Orden fijo del POS (nueva orden): Combos, Costillas, Pollos, Guarniciones
-// y Bebidas. Las demás categorías van después, en el orden guardado. Dentro
-// de cada una, del precio mayor al menor (empate: por nombre).
-export const ORDEN_CATEGORIAS_POS = ['combos', 'costillas', 'pollos', 'guarniciones', 'bebidas']
-
-export function ordenarCategoriasPOS(cats) {
-  const pos = (c) => {
-    const i = ORDEN_CATEGORIAS_POS.indexOf(c.key)
-    return i === -1 ? ORDEN_CATEGORIAS_POS.length : i
-  }
-  return cats.map((c, i) => [c, i]).sort((a, b) => pos(a[0]) - pos(b[0]) || a[1] - b[1]).map(([c]) => c)
+export function cargarCategorias({ forzar = false } = {}) {
+  if (cargaCategorias) return cargaCategorias
+  if (estadoCategorias.cargado && !forzar) return Promise.resolve(categoriasMenu)
+  estadoCategorias.cargando = true
+  cargaCategorias = api.get('/api/config/categorias')
+    .then(({ data }) => {
+      const lista = data.map(aCategoria)
+      categoriasMenu.splice(0, categoriasMenu.length, ...lista)
+      localStorage.setItem(CATEGORIAS_CACHE_KEY, JSON.stringify(lista))
+      localStorage.removeItem('foodops_categorias')
+      estadoCategorias.cargado = true
+      estadoCategorias.error = ''
+      return categoriasMenu
+    })
+    .catch(() => {
+      if (!categoriasMenu.length) categoriasMenu.splice(0, 0, ...categoriasDeRespaldo())
+      estadoCategorias.error = 'No se pudieron cargar las categorías'
+      return categoriasMenu
+    })
+    .finally(() => {
+      estadoCategorias.cargando = false
+      cargaCategorias = null
+    })
+  return cargaCategorias
 }
 
+// Arreglo reactivo de categorías activas, en orden. Lo carga la primera vez.
+export function getCategorias() {
+  if (!estadoCategorias.cargado) cargarCategorias()
+  return categoriasMenu
+}
+
+// Dentro de cada categoría del POS, del precio mayor al menor (empate: nombre).
 export function ordenarPorPrecioDesc(items) {
   return [...items].sort((a, b) => Number(b.precio) - Number(a.precio) || String(a.nombre).localeCompare(String(b.nombre), 'es'))
-}
-
-export function saveCategorias(cats) {
-  localStorage.setItem('foodops_categorias', JSON.stringify(cats))
 }

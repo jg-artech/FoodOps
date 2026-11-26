@@ -24,13 +24,32 @@
         <span>{{ menuCarga.error }}</span>
         <button @click="cargarProductos" class="shrink-0 font-semibold underline">Reintentar</button>
       </div>
-      <div v-for="cat in categorias" :key="cat.key" class="bg-white rounded-2xl border border-gray-200 shadow-sm mb-4 overflow-hidden">
-        <div class="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
-          <h3 class="font-bold text-gray-700">{{ cat.emoji }} {{ cat.label }}</h3>
-          <button @click="abrirNuevo(cat.key)"
-            class="text-xs bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded-full font-semibold transition">
-            + Agregar
-          </button>
+      <p class="text-xs text-gray-400 mb-3">
+        Las categorías aparecen en Nueva orden en este mismo orden (cámbialo con ↑ ↓); dentro de cada una, los productos van del precio mayor al menor.
+      </p>
+      <p v-if="errorCategorias" class="text-red-500 text-sm mb-3">{{ errorCategorias }}</p>
+      <div v-for="(cat, i) in categorias" :key="cat.key" class="bg-white rounded-2xl border border-gray-200 shadow-sm mb-4 overflow-hidden">
+        <div class="flex items-center justify-between gap-2 px-5 py-3 bg-gray-50 border-b border-gray-200">
+          <div class="flex items-center gap-2 min-w-0">
+            <div class="flex flex-col shrink-0">
+              <button @click="moverCategoria(i, -1)" :disabled="i === 0 || guardandoCategorias" title="Subir"
+                class="text-xs leading-none px-1 text-gray-500 hover:text-orange-600 disabled:opacity-20">▲</button>
+              <button @click="moverCategoria(i, 1)" :disabled="i === categorias.length - 1 || guardandoCategorias" title="Bajar"
+                class="text-xs leading-none px-1 text-gray-500 hover:text-orange-600 disabled:opacity-20">▼</button>
+            </div>
+            <span class="text-xs text-gray-400 shrink-0">{{ i + 1 }}.</span>
+            <h3 class="font-bold text-gray-700 truncate">{{ cat.emoji }} {{ cat.label }}</h3>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button @click="renombrarCategoria(cat)" :disabled="guardandoCategorias" title="Cambiar nombre o emoji"
+              class="text-xs text-gray-500 hover:text-orange-600 px-2 py-1.5 disabled:opacity-40">✎</button>
+            <button @click="cambiarActivaCategoria(cat, false)" :disabled="guardandoCategorias" title="Desactivar categoría"
+              class="text-xs text-red-400 hover:text-red-600 px-2 py-1.5 disabled:opacity-40">Desactivar</button>
+            <button @click="abrirNuevo(cat.key)"
+              class="text-xs bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded-full font-semibold transition">
+              + Agregar
+            </button>
+          </div>
         </div>
         <div class="divide-y divide-gray-100">
           <div v-for="item in itemsPorCategoria(cat.key)" :key="item.id" class="px-5 py-3">
@@ -66,20 +85,31 @@
         </div>
       </div>
 
-      <!-- Nueva categoría -->
+      <!-- Categorías inactivas -->
+      <div v-if="categoriasInactivas.length" class="bg-white rounded-2xl border border-gray-200 p-5 mb-4">
+        <h3 class="font-bold text-gray-500 text-sm mb-2">Categorías inactivas (no aparecen en Nueva orden)</h3>
+        <div v-for="cat in categoriasInactivas" :key="cat.key" class="flex items-center justify-between py-1.5 text-sm">
+          <span class="text-gray-400">{{ cat.emoji }} {{ cat.label }}</span>
+          <button @click="cambiarActivaCategoria(cat, true)" :disabled="guardandoCategorias"
+            class="text-xs bg-green-50 hover:bg-green-100 text-green-700 px-2 py-1 rounded font-medium disabled:opacity-40">Reactivar</button>
+        </div>
+      </div>
+
+      <!-- Nueva categoría: se guarda en la base y queda al final -->
       <div class="bg-white rounded-2xl border border-dashed border-gray-300 p-5 mb-5">
         <h3 class="font-bold text-gray-500 text-sm mb-3">+ Nueva categoría</h3>
         <div class="flex gap-2">
-          <input v-model="nuevaCat.key" placeholder="clave (ej: bebidas)" autocomplete="off"
+          <input v-model="nuevaCat.label" placeholder="nombre (ej: Bebidas)" autocomplete="off" maxlength="50"
+            @keydown.enter.prevent="agregarCategoria"
             class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
-          <input v-model="nuevaCat.label" placeholder="nombre (ej: Bebidas)" autocomplete="off"
-            class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
-          <input v-model="nuevaCat.emoji" placeholder="🥤" maxlength="4"
+          <input v-model="nuevaCat.emoji" placeholder="🥤" maxlength="16"
             class="w-14 border border-gray-200 rounded-lg px-2 py-2 text-sm text-center focus:outline-none focus:ring-1 focus:ring-orange-400" />
-          <button @click="agregarCategoria" class="bg-gray-700 hover:bg-gray-800 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+          <button @click="agregarCategoria" :disabled="!nuevaCat.label.trim() || guardandoCategorias"
+            class="bg-gray-700 hover:bg-gray-800 text-white text-sm font-semibold px-4 py-2 rounded-lg transition disabled:opacity-40">
             Crear
           </button>
         </div>
+        <p class="text-xs text-gray-400 mt-2">Queda al final de la lista; súbela con ▲.</p>
       </div>
 
       <p v-if="guardadoMenu" class="text-green-600 text-sm text-center font-semibold mb-3">✓ Menú guardado</p>
@@ -565,7 +595,7 @@
 <script setup>
 import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, watch, onMounted } from 'vue'
-import { cargarMenu, guardarEmoji, emojiDeProducto, getCategorias, saveCategorias, CATEGORIAS } from '@/data/menu.js'
+import { aCategoria, cargarCategorias, cargarMenu, guardarEmoji, emojiDeProducto } from '@/data/menu.js'
 import api from '@/services/api'
 
 const tabs = [
@@ -631,13 +661,77 @@ function cambioEnLinea(item) {
     || (item.contenido || '').trim() !== (o.contenido || '')
 }
 
-// Carga categorías desde localStorage (incluye las creadas por el usuario)
-const categorias = reactive(JSON.parse(JSON.stringify(getCategorias())))
+// Categorías desde la base (migración 017), activas e inactivas, en orden de
+// posición. Las activas son las tarjetas del menú y de costos.
+const todasCategorias = ref([])
+const categorias = computed(() => todasCategorias.value.filter((c) => c.activo))
+const categoriasInactivas = computed(() => todasCategorias.value.filter((c) => !c.activo))
+const guardandoCategorias = ref(false)
+const errorCategorias = ref('')
 
-const nuevaCat = reactive({ key: '', label: '', emoji: '' })
+const nuevaCat = reactive({ label: '', emoji: '' })
+
+function detalleError(e, porDefecto) {
+  const d = e?.response?.data?.detail
+  if (Array.isArray(d)) return d.map((x) => x.msg).join(' · ')
+  return d || porDefecto
+}
+
+async function cargarCategoriasConfig() {
+  try {
+    const { data } = await api.get('/api/config/categorias', { params: { incluir_inactivas: true } })
+    todasCategorias.value = data.map(aCategoria)
+  } catch (e) {
+    errorCategorias.value = detalleError(e, 'No se pudieron cargar las categorías')
+  }
+}
+onMounted(cargarCategoriasConfig)
+
+// Toda escritura de categorías: ejecuta, recarga la lista de aquí y la
+// compartida (POS en esta misma pestaña).
+async function conCategorias(fn, porDefecto) {
+  guardandoCategorias.value = true
+  errorCategorias.value = ''
+  try {
+    await fn()
+    return true
+  } catch (e) {
+    errorCategorias.value = detalleError(e, porDefecto)
+    return false
+  } finally {
+    await cargarCategoriasConfig()
+    cargarCategorias({ forzar: true })
+    guardandoCategorias.value = false
+  }
+}
+
+// ▲ ▼: se cambia el lugar entre las activas y se envía la lista completa
+// (activas en el orden nuevo y luego las inactivas).
+function moverCategoria(i, delta) {
+  const activas = [...categorias.value]
+  const j = i + delta
+  if (j < 0 || j >= activas.length) return
+  ;[activas[i], activas[j]] = [activas[j], activas[i]]
+  const ids = [...activas, ...categoriasInactivas.value].map((c) => c.id)
+  conCategorias(() => api.put('/api/config/categorias/orden', { ids }), 'No se pudo cambiar el orden')
+}
+
+function renombrarCategoria(cat) {
+  const nombre = prompt('Nombre de la categoría', cat.label)
+  if (nombre === null || !nombre.trim()) return
+  const emoji = prompt('Emoji de la categoría (opcional)', cat.emoji || '')
+  if (emoji === null) return
+  conCategorias(() => api.patch(`/api/config/categorias/${cat.id}`, { nombre: nombre.trim(), emoji: emoji.trim() || null }),
+    'No se pudo cambiar la categoría')
+}
+
+function cambiarActivaCategoria(cat, activo) {
+  if (!activo && !confirm(`¿Desactivar "${cat.label}"? Dejará de aparecer en Nueva orden.`)) return
+  conCategorias(() => api.patch(`/api/config/categorias/${cat.id}`, { activo }), 'No se pudo cambiar la categoría')
+}
 
 function itemsPorCategoria(cat) { return menu.filter(i => i.categoria === cat) }
-function catLabel(key) { return categorias.find(c => c.key === key)?.label || key }
+function catLabel(key) { return todasCategorias.value.find(c => c.key === key)?.label || key }
 
 // Eliminar quita el producto del menú en la base (DELETE, queda activo =
 // false): desaparece del POS de todas las tiendas. Las órdenes ya hechas no
@@ -660,21 +754,19 @@ async function eliminarItem(item) {
   }
 }
 
-function agregarCategoria() {
-  const key = nuevaCat.key.trim().toLowerCase().replace(/\s+/g, '_')
-  const label = nuevaCat.label.trim()
-  if (!key || !label || categorias.find(c => c.key === key)) return
-  categorias.push({ key, label, emoji: nuevaCat.emoji || '📦' })
-  // Guardar inmediatamente para que persista
-  saveCategorias([...categorias])
-  nuevaCat.key = ''
-  nuevaCat.label = ''
-  nuevaCat.emoji = ''
+async function agregarCategoria() {
+  const nombre = nuevaCat.label.trim()
+  if (!nombre) return
+  const ok = await conCategorias(() => api.post('/api/config/categorias', { nombre, emoji: nuevaCat.emoji.trim() || null }),
+    'No se pudo crear la categoría')
+  if (ok) {
+    nuevaCat.label = ''
+    nuevaCat.emoji = ''
+  }
 }
 
 async function guardarMenu() {
   errorMenu.value = ''
-  saveCategorias([...categorias])
   const cambiados = menu.filter(cambioEnLinea)
   guardandoMenu.value = true
   const fallidos = []
@@ -1038,7 +1130,6 @@ async function confirmarNuevo() {
     const item = menu.find((i) => i.id === productoBackend.id)
     if (item) Object.assign(item, { ...aItemMenu(productoBackend), emoji })
     else menu.push({ ...aItemMenu(productoBackend), emoji })
-    saveCategorias([...categorias])
     cargarMenu({ forzar: true })
 
     nuevoModal.visible = false

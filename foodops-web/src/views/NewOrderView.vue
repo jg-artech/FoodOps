@@ -340,7 +340,7 @@ import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/index'
-import { getMenu, getCategorias, cargarMenu, estadoMenu, ordenarCategoriasPOS, ordenarPorPrecioDesc } from '@/data/menu.js'
+import { getMenu, getCategorias, cargarMenu, cargarCategorias, estadoMenu, ordenarPorPrecioDesc } from '@/data/menu.js'
 import PiezaModal from '@/components/PiezaModal.vue'
 import SelectorComponentesModal from '@/components/SelectorComponentesModal.vue'
 import api from '@/services/api'
@@ -384,7 +384,7 @@ const recetas = computed(() => {
 })
 // Al abrir el POS se vuelve a pedir el menú, para ver precios y contenido
 // recién editados en Configuración. Si falla, sigue lo último en memoria.
-onMounted(() => { cargarMenu({ forzar: true }) })
+onMounted(() => { cargarMenu({ forzar: true }); cargarCategorias({ forzar: true }) })
 // /me trae el tope del cargo de entrega de la tienda; el usuario guardado en
 // localStorage puede ser de antes de que existiera. Si falla, el backend
 // igual exige la autorización (403) y entonces se pide.
@@ -435,7 +435,9 @@ onMounted(async () => {
   }
 })
 
-const categorias = ordenarCategoriasPOS(getCategorias())
+// Orden de la tabla categorias_menu; sin productos, la categoría no se muestra.
+const todasLasCategorias = getCategorias()
+const categorias = computed(() => todasLasCategorias.filter((c) => menuItems.some((i) => i.categoria === c.key)))
 
 const form = reactive({
   tipo: '',
