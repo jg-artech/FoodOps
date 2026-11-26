@@ -301,6 +301,9 @@
       </div>
     </div>
 
+    <!-- ═══ PESTAÑA: INVENTARIO ═══ -->
+    <ConfigInventario v-if="tab === 'inventario'" />
+
     <!-- ═══ PESTAÑA: INICIATIVAS ═══ -->
     <div v-if="tab === 'iniciativas'">
       <div class="flex items-center justify-between mb-4">
@@ -597,10 +600,12 @@ import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { aCategoria, cargarCategorias, cargarMenu, guardarEmoji, emojiDeProducto } from '@/data/menu.js'
 import api from '@/services/api'
+import ConfigInventario from '@/components/ConfigInventario.vue'
 
 const tabs = [
   { key: 'menu',        label: '🍗 Menú' },
   { key: 'costos',      label: '💰 Costos' },
+  { key: 'inventario',  label: '📦 Inventario' },
   { key: 'iniciativas', label: '🎯 Iniciativas' },
 ]
 const tab = ref('menu')
