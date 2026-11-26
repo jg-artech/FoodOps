@@ -47,6 +47,8 @@
                 class="text-xs bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 px-2 py-1.5 rounded-lg font-semibold transition shrink-0">
                 🧩
               </button>
+              <button @click="eliminarItem(item)" :disabled="eliminandoId === item.id" title="Eliminar del menú"
+                class="text-red-400 hover:text-red-600 text-lg px-1 transition shrink-0 disabled:opacity-40">✕</button>
             </div>
             <div class="mt-2 ml-9">
               <input v-model="item.contenido" maxlength="500"
@@ -636,6 +638,27 @@ const nuevaCat = reactive({ key: '', label: '', emoji: '' })
 
 function itemsPorCategoria(cat) { return menu.filter(i => i.categoria === cat) }
 function catLabel(key) { return categorias.find(c => c.key === key)?.label || key }
+
+// Eliminar quita el producto del menú en la base (DELETE, queda activo =
+// false): desaparece del POS de todas las tiendas. Las órdenes ya hechas no
+// cambian.
+const eliminandoId = ref(null)
+async function eliminarItem(item) {
+  if (!confirm(`¿Eliminar "${item.nombre}" del menú? Dejará de aparecer en el POS de todas las tiendas. Las órdenes ya hechas no cambian.`)) return
+  errorMenu.value = ''
+  eliminandoId.value = item.id
+  try {
+    await api.delete(`/api/config/productos/${item.id}`)
+    const idx = menu.findIndex((i) => i.id === item.id)
+    if (idx !== -1) menu.splice(idx, 1)
+    originales.delete(item.id)
+    await cargarMenu({ forzar: true })
+  } catch (e) {
+    errorMenu.value = `No se eliminó ${item.nombre}: ${e.response?.data?.detail || 'error al eliminar'}`
+  } finally {
+    eliminandoId.value = null
+  }
+}
 
 function agregarCategoria() {
   const key = nuevaCat.key.trim().toLowerCase().replace(/\s+/g, '_')
