@@ -340,3 +340,41 @@ class DatosFacturaRequest(BaseModel):
             self.direccion_fiscal, "La dirección fiscal", DIRECCION_FISCAL_MAX
         )
         return self
+
+
+# ---------------------------------------------------------------------------
+# Personal de cocina y responsable por orden (migración 016)
+# ---------------------------------------------------------------------------
+
+
+def _nombre_personal(v: str) -> str:
+    v = " ".join(v.split())
+    if not v:
+        raise ValueError("El nombre es obligatorio")
+    return v
+
+
+class PersonalCocinaCreate(BaseModel):
+    nombre: Annotated[str, Field(max_length=100)]
+    # Solo gerencia (sin tienda propia) lo indica; el responsable de tienda
+    # crea siempre en la suya.
+    punto_id: Optional[int] = None
+
+    @field_validator("nombre")
+    @classmethod
+    def _limpiar_nombre(cls, v: str) -> str:
+        return _nombre_personal(v)
+
+
+class PersonalCocinaUpdate(BaseModel):
+    nombre: Optional[Annotated[str, Field(max_length=100)]] = None
+    activo: Optional[bool] = None
+
+    @field_validator("nombre")
+    @classmethod
+    def _limpiar_nombre(cls, v):
+        return _nombre_personal(v) if v is not None else v
+
+
+class ResponsableCocinaRequest(BaseModel):
+    personal_id: int

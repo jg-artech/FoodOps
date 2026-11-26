@@ -150,7 +150,19 @@ class Orden(Base):
     confirmado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     confirmado_at = Column(DateTime, nullable=True)
 
+    # Quién prepara la orden en cocina (migración 016). Se guarda el id, no el
+    # nombre: renombrar a alguien no altera los reportes.
+    responsable_cocina_id = Column(Integer, ForeignKey("personal_cocina.id"), nullable=True)
+    # Hora de la primera asignación de responsable.
+    en_preparacion_at = Column(DateTime, nullable=True)
+    # Las órdenes anteriores a la migración 016 quedan en false (se cierran sin
+    # responsable); las nuevas no pasan a listo ni a entregado sin él.
+    exige_responsable_cocina = Column(Boolean, nullable=False, default=True, server_default="false")
+
     punto = relationship("PuntoVenta", back_populates="ordenes")
+    # lazy="selectin": el nombre llega en una segunda consulta (IN), sin una
+    # consulta por fila. "joined" no sirve: rompe los SELECT ... FOR UPDATE.
+    responsable_cocina = relationship("PersonalCocina", lazy="selectin")
     items = relationship("OrdenItem", back_populates="orden")
     tomada_por_usuario = relationship("Usuario", foreign_keys=[tomada_por])
 
@@ -159,6 +171,22 @@ class Orden(Base):
     __table_args__ = (
         UniqueConstraint("punto_id", "numero_orden", name="uq_ordenes_punto_numero"),
     )
+
+class PersonalCocina(Base):
+    """Personal de cocina de una tienda (migración 016). Sin borrado físico:
+    hay rotación, y las órdenes conservan el id de quien las preparó.
+    Sin vínculo con usuarios: la cocina puede usar un usuario compartido."""
+
+    __tablename__ = "personal_cocina"
+
+    id = Column(Integer, primary_key=True)
+    punto_id = Column(Integer, ForeignKey("puntos_venta.id"), nullable=False)
+    nombre = Column(String(100), nullable=False)
+    activo = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (Index("ix_personal_cocina_punto_activo", "punto_id", "activo"),)
+
 
 ITEM_TIPO_PRODUCTO = "producto"
 ITEM_TIPO_ENTREGA = "entrega"

@@ -23,10 +23,12 @@ from foodops.core.auth import (
 )
 from foodops.core.config import settings
 from foodops.core.permisos_ordenes import (
+    ROLES_ASIGNAR_RESPONSABLE,
     ROLES_CAMBIAR_ESTADO_COCINA,
     ROLES_CANCELAR,
     ROLES_MARCAR_ENTREGADO,
     ROLES_MARCAR_LISTO,
+    ROLES_REASIGNAR_RESPONSABLE,
     ROLES_SOLO_IMPORTES_PROPIOS,
     ROLES_SOLO_ORDENES_DE_HOY,
 )
@@ -41,6 +43,7 @@ from foodops.db.models import (
     Orden,
     OrdenEstado,
     OrdenItem,
+    PersonalCocina,
     PuntoVenta,
     TransaccionVenta,
     TipoVenta,
@@ -56,6 +59,7 @@ from foodops.domain.schemas import (
     CrearTransaccionRequest,
     DatosFacturaRequest,
     OrdenCreate,
+    ResponsableCocinaRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -168,6 +172,14 @@ def _orden_dict(
         "confirmado_por": o.confirmado_por,
         "confirmado_por_nombre": confirmado_por_nombre,
         "confirmado_at": str(o.confirmado_at) if o.confirmado_at else None,
+        # Responsable de cocina (migración 016): id y nombre actual.
+        "responsable_cocina": (
+            {"id": o.responsable_cocina.id, "nombre": o.responsable_cocina.nombre}
+            if o.responsable_cocina is not None
+            else None
+        ),
+        "en_preparacion_at": str(o.en_preparacion_at) if o.en_preparacion_at else None,
+        "exige_responsable_cocina": bool(o.exige_responsable_cocina),
         # Objeto de _datos_factura_dict, o None si la orden no tiene fila
         # (equivale a requiere_factura = false).
         "datos_factura": datos_factura,
@@ -482,6 +494,98 @@ _ROLES_POR_ESTADO_DESTINO = {
 }
 
 
+# Sin responsable de cocina no se pasa a listo ni a entregado (la entrega
+# directa sería una salida a la regla). Las órdenes anteriores a la migración
+# 016 (exige_responsable_cocina = false) se cierran sin él.
+_ESTADOS_QUE_EXIGEN_RESPONSABLE = (OrdenEstado.LISTO, OrdenEstado.ENTREGADO)
+# Con la orden en estos estados ya no se cambia el responsable.
+_ESTADOS_SIN_CAMBIO_DE_RESPONSABLE = (OrdenEstado.LISTO, OrdenEstado.ENTREGADO, OrdenEstado.CANCELADO)
+
+
+@router.put("/{orden_id}/responsable-cocina")
+def asignar_responsable_cocina(
+    orden_id: int,
+    body: ResponsableCocinaRequest,
+    current_user: TokenData = Depends(requiere_rol(*ROLES_ASIGNAR_RESPONSABLE)),
+):
+    """Asigna quién prepara la orden. Orden de validaciones: orden existe
+    (404) -> tienda del usuario (403) -> estado listo/entregado/cancelado (409)
+    -> personal existe (404) y es de la tienda de la orden (403) -> activo (422)
+    -> el cocinero solo asigna si la orden no tiene responsable (403).
+
+    Sin vínculo entre usuario y personal (decisión del 2026-11-25): el cocinero
+    elige a cualquier persona activa de su tienda; reasignar es de gerencia.
+    La primera asignación registra en_preparacion_at, y si la orden está en
+    pendiente la pasa a preparando.
+    """
+    session = Session()
+    try:
+        orden = session.get(Orden, orden_id)
+        if not orden:
+            raise HTTPException(status_code=404, detail="Orden no encontrada")
+        exigir_acceso_a_punto(current_user, orden.punto_id)
+        if orden.estado in _ESTADOS_SIN_CAMBIO_DE_RESPONSABLE:
+            raise HTTPException(
+                status_code=409,
+                detail=f"La orden está {orden.estado.value}: ya no se puede cambiar el responsable de cocina",
+            )
+        persona = session.get(PersonalCocina, body.personal_id)
+        if not persona:
+            raise HTTPException(status_code=404, detail="Personal de cocina no encontrado")
+        if persona.punto_id != orden.punto_id:
+            raise HTTPException(status_code=403, detail="Ese personal de cocina pertenece a otra tienda")
+        if not persona.activo:
+            raise HTTPException(status_code=422, detail=f"{persona.nombre} está inactivo en el personal de cocina")
+        reasigna = orden.responsable_cocina_id is not None and orden.responsable_cocina_id != persona.id
+        if reasigna and current_user.rol not in ROLES_REASIGNAR_RESPONSABLE:
+            raise HTTPException(
+                status_code=403,
+                detail="Solo un responsable o gerente puede cambiar el responsable de cocina",
+            )
+
+        antes = (
+            {"id": orden.responsable_cocina.id, "nombre": orden.responsable_cocina.nombre}
+            if orden.responsable_cocina is not None
+            else None
+        )
+        estado_previo = orden.estado.value
+        if orden.responsable_cocina_id != persona.id:
+            orden.responsable_cocina_id = persona.id
+            if orden.en_preparacion_at is None:
+                orden.en_preparacion_at = datetime.utcnow()
+            if orden.estado == OrdenEstado.PENDIENTE:
+                orden.estado = OrdenEstado.PREPARANDO
+            registrar_auditoria(
+                session,
+                accion="ORDEN_RESPONSABLE_COCINA_ASIGNADO",
+                entidad="orden",
+                entidad_id=orden.id,
+                usuario_id=current_user.user_id,
+                punto_id=orden.punto_id,
+                detalle={
+                    "numero_orden": orden.numero_orden,
+                    "antes": antes,
+                    "despues": {"id": persona.id, "nombre": persona.nombre},
+                    "estado_previo": estado_previo,
+                    "estado_nuevo": orden.estado.value,
+                },
+            )
+            session.commit()
+            session.refresh(orden)
+        return {
+            "id": orden.id,
+            "numero_orden": orden.numero_orden,
+            "estado": orden.estado.value,
+            "responsable_cocina": {"id": orden.responsable_cocina.id, "nombre": orden.responsable_cocina.nombre},
+            "en_preparacion_at": str(orden.en_preparacion_at) if orden.en_preparacion_at else None,
+        }
+    except HTTPException:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
 @router.put("/{orden_id}/status")
 def actualizar_estado_orden(
     orden_id: int,
@@ -526,6 +630,18 @@ def actualizar_estado_orden(
         exigir_acceso_a_punto(current_user, orden.punto_id)
         if orden.estado == OrdenEstado.CANCELADO:
             raise HTTPException(status_code=409, detail="La orden está cancelada y no se puede reactivar")
+        if (
+            nuevo_estado_enum in _ESTADOS_QUE_EXIGEN_RESPONSABLE
+            and orden.exige_responsable_cocina
+            and orden.responsable_cocina_id is None
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Asigna un responsable de cocina antes de marcar la orden como "
+                    f"{nuevo_estado_enum.value}"
+                ),
+            )
 
         orden.estado = nuevo_estado_enum
         session.commit()

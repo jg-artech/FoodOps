@@ -1,15 +1,23 @@
 """CRUD de catálogo de productos + receta (producto_componentes), desde ConfigView"""
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
-from foodops.core.auth import TokenData, requiere_rol
+from foodops.core.auth import TokenData, exigir_acceso_a_punto, requiere_rol, resolver_punto_id
 from foodops.core.config import settings
+from foodops.core.permisos_ordenes import (
+    ROLES_ADMINISTRAR_PERSONAL_COCINA,
+    ROLES_VER_PERSONAL_COCINA,
+)
+from foodops.db.models import PersonalCocina
 from foodops.db.models_caja import ItemInventario
 from foodops.db.models_stock import ProductoComponente, ProductoMenu
+from foodops.domain.schemas import PersonalCocinaCreate, PersonalCocinaUpdate
 from foodops.domain.schemas_stock import (
     ProductoConComponentesCreate,
     ProductoConComponentesUpdate,
@@ -239,5 +247,127 @@ def actualizar_producto_config(
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Personal de cocina por tienda (migración 016). Sin DELETE: hay rotación y
+# las órdenes conservan el id de quien las preparó; se desactiva con PATCH.
+# ---------------------------------------------------------------------------
+
+
+def _personal_dict(p: PersonalCocina) -> dict:
+    return {
+        "id": p.id,
+        "punto_id": p.punto_id,
+        "nombre": p.nombre,
+        "activo": p.activo,
+        "created_at": str(p.created_at),
+    }
+
+
+def _validar_nombre_personal_unico(session, punto_id: int, nombre: str, excluir_id: int = None) -> None:
+    stmt = select(PersonalCocina).where(
+        PersonalCocina.punto_id == punto_id,
+        func.lower(PersonalCocina.nombre) == nombre.lower(),
+    )
+    if excluir_id is not None:
+        stmt = stmt.where(PersonalCocina.id != excluir_id)
+    if session.execute(stmt).scalars().first():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ya existe '{nombre}' en el personal de cocina de esta tienda (activo o inactivo)",
+        )
+
+
+@router.get("/personal-cocina")
+def listar_personal_cocina(
+    punto_id: Optional[int] = Query(default=None),
+    incluir_inactivos: bool = Query(default=False),
+    current_user: TokenData = Depends(requiere_rol(*ROLES_VER_PERSONAL_COCINA)),
+):
+    """Personal de una tienda. Cocina lo usa para el selector de responsable
+    (solo activos); los inactivos solo los ve quien administra el personal."""
+    session = Session()
+    try:
+        punto = resolver_punto_id(session, current_user, punto_id)
+        stmt = select(PersonalCocina).where(PersonalCocina.punto_id == punto)
+        if not (incluir_inactivos and current_user.rol in ROLES_ADMINISTRAR_PERSONAL_COCINA):
+            stmt = stmt.where(PersonalCocina.activo.is_(True))
+        filas = session.execute(
+            stmt.order_by(PersonalCocina.activo.desc(), func.lower(PersonalCocina.nombre))
+        ).scalars().all()
+        return [_personal_dict(p) for p in filas]
+    finally:
+        session.close()
+
+
+@router.post("/personal-cocina", status_code=201)
+def crear_personal_cocina(
+    body: PersonalCocinaCreate,
+    current_user: TokenData = Depends(requiere_rol(*ROLES_ADMINISTRAR_PERSONAL_COCINA)),
+):
+    session = Session()
+    try:
+        punto = resolver_punto_id(session, current_user, body.punto_id)
+        _validar_nombre_personal_unico(session, punto, body.nombre)
+        persona = PersonalCocina(punto_id=punto, nombre=body.nombre, activo=True)
+        session.add(persona)
+        session.flush()
+        registrar_auditoria(
+            session,
+            accion="PERSONAL_COCINA_CREADO",
+            entidad="personal_cocina",
+            entidad_id=persona.id,
+            usuario_id=current_user.user_id,
+            punto_id=punto,
+            detalle={"nombre": persona.nombre},
+        )
+        session.commit()
+        return _personal_dict(persona)
+    except HTTPException:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+@router.patch("/personal-cocina/{personal_id}")
+def actualizar_personal_cocina(
+    personal_id: int,
+    body: PersonalCocinaUpdate,
+    current_user: TokenData = Depends(requiere_rol(*ROLES_ADMINISTRAR_PERSONAL_COCINA)),
+):
+    """Cambia el nombre o activa/desactiva. Desactivar no toca las órdenes que
+    ya tienen a esta persona como responsable."""
+    session = Session()
+    try:
+        persona = session.get(PersonalCocina, personal_id)
+        if not persona:
+            raise HTTPException(status_code=404, detail="Personal no encontrado")
+        exigir_acceso_a_punto(current_user, persona.punto_id)
+        antes = {"nombre": persona.nombre, "activo": persona.activo}
+        if body.nombre is not None and body.nombre != persona.nombre:
+            _validar_nombre_personal_unico(session, persona.punto_id, body.nombre, excluir_id=persona.id)
+            persona.nombre = body.nombre
+        if body.activo is not None:
+            persona.activo = body.activo
+        despues = {"nombre": persona.nombre, "activo": persona.activo}
+        if despues != antes:
+            registrar_auditoria(
+                session,
+                accion="PERSONAL_COCINA_ACTUALIZADO",
+                entidad="personal_cocina",
+                entidad_id=persona.id,
+                usuario_id=current_user.user_id,
+                punto_id=persona.punto_id,
+                detalle={"antes": antes, "despues": despues},
+            )
+        session.commit()
+        return _personal_dict(persona)
+    except HTTPException:
+        session.rollback()
+        raise
     finally:
         session.close()

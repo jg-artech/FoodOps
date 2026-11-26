@@ -38,3 +38,16 @@ ROLES_SOLO_ORDENES_DE_HOY = ("tomador_orden",)
 # órdenes que ellos mismos tomaron; en las demás de su tienda, total = null y
 # total_oculto = true. Evita que el vendedor reconstruya el total del día.
 ROLES_SOLO_IMPORTES_PROPIOS = ("tomador_orden",)
+
+# Responsable de preparar la orden en cocina (PUT /responsable-cocina).
+# Sin vínculo entre usuario y personal (decisión del 2026-11-25): el cocinero
+# elige a cualquier persona activa de su tienda, pero solo si la orden aún no
+# tiene responsable. Cambiar un responsable ya asignado es de gerencia.
+ROLES_ASIGNAR_RESPONSABLE = ROLES_MARCAR_LISTO
+ROLES_REASIGNAR_RESPONSABLE = ("resp_tienda", "gerente_punto", "gerente_general", "admin")
+
+# Personal de cocina (/api/config/personal-cocina): lo administra el
+# responsable de su tienda, y gerencia en cualquiera. Cocina lo lee para el
+# selector de responsable.
+ROLES_ADMINISTRAR_PERSONAL_COCINA = ("resp_tienda", "gerente_general", "admin")
+ROLES_VER_PERSONAL_COCINA = ROLES_ASIGNAR_RESPONSABLE
