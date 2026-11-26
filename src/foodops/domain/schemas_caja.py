@@ -5,7 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import field_validator, BaseModel, Field
 
 # Reusable annotated types (same limits as domain/schemas.py)
 Monto = Annotated[Decimal, Field(ge=Decimal("0"), max_digits=10, decimal_places=2)]
@@ -137,12 +137,27 @@ class DesperdicioResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _texto_item(v):
+    if v is None:
+        return v
+    v = " ".join(v.split())
+    if not v:
+        raise ValueError("No puede quedar vacío")
+    return v
+
+
 class ItemInventarioCreate(BaseModel):
     nombre: NombreStr
     tipo: TipoItemInventario
     unidad: UnidadStr
     producto_menu_id: Optional[int] = None
-    orden_conteo: Annotated[int, Field(ge=0, le=9999)]
+    # Sin orden: queda al final del conteo de su tipo.
+    orden_conteo: Optional[Annotated[int, Field(ge=0, le=9999)]] = None
+
+    @field_validator("nombre", "unidad")
+    @classmethod
+    def _limpiar(cls, v):
+        return _texto_item(v)
 
 
 class ItemInventarioUpdate(BaseModel):
@@ -152,6 +167,16 @@ class ItemInventarioUpdate(BaseModel):
     producto_menu_id: Optional[int] = None
     orden_conteo: Optional[Annotated[int, Field(ge=0, le=9999)]] = None
     activo: Optional[bool] = None
+
+    @field_validator("nombre", "unidad")
+    @classmethod
+    def _limpiar(cls, v):
+        return _texto_item(v)
+
+
+class ItemsInventarioOrdenRequest(BaseModel):
+    # Todos los items (activos e inactivos, de todos los tipos), en el orden nuevo.
+    ids: Annotated[list[int], Field(min_length=1)]
 
 
 class ItemInventarioResponse(BaseModel):

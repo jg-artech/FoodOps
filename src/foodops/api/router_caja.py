@@ -32,6 +32,7 @@ from foodops.db.models_caja import (
     ItemInventario,
     TransaccionPedido,
 )
+from foodops.db.models_stock import ProductoComponente, ProductoMenu
 from foodops.domain.schemas_caja import (
     CajaDiariaCerrarRequest,
     CajaDiariaCreate,
@@ -42,6 +43,7 @@ from foodops.domain.schemas_caja import (
     InventarioDiarioSubmit,
     ItemInventarioCreate,
     ItemInventarioUpdate,
+    ItemsInventarioOrdenRequest,
     TransaccionPedidoCreate,
 )
 from foodops.utils.timeutils import hoy_local, local_day_bounds
@@ -623,13 +625,27 @@ def listar_desperdicios(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/inventario/items")
+def _validar_nombre_item_unico(session, nombre: str, excluir_id: int = None) -> None:
+    stmt = select(ItemInventario).where(func.lower(ItemInventario.nombre) == nombre.lower())
+    if excluir_id is not None:
+        stmt = stmt.where(ItemInventario.id != excluir_id)
+    if session.execute(stmt).scalars().first():
+        raise HTTPException(status_code=400, detail=f"Ya existe un item llamado '{nombre}' (activo o inactivo)")
+
+
+@router.post("/inventario/items", status_code=201)
 def crear_item_inventario(
     body: ItemInventarioCreate,
     current_user: TokenData = Depends(requiere_rol(*_ROLES_GERENCIA)),
 ):
+    """Catálogo de empresa (punto_id NULL). Nombre único sin importar
+    mayúsculas. Sin orden_conteo, queda al final del conteo."""
     session = Session()
     try:
+        _validar_nombre_item_unico(session, body.nombre)
+        orden = body.orden_conteo
+        if orden is None:
+            orden = (session.execute(select(func.max(ItemInventario.orden_conteo))).scalar() or 0) + 1
         item = ItemInventario(
             # Catálogo de empresa: no se etiqueta a la tienda del creador
             # (era lo que dejaba la tabla a medio llenar). Ver migración 010.
@@ -638,17 +654,56 @@ def crear_item_inventario(
             tipo=body.tipo.value,
             unidad=body.unidad,
             producto_menu_id=body.producto_menu_id,
-            orden_conteo=body.orden_conteo,
+            orden_conteo=orden,
             activo=True,
         )
         session.add(item)
+        session.flush()
+        registrar_auditoria(
+            session, accion="INVENTARIO_ITEM_CREADO", entidad="item_inventario", entidad_id=item.id,
+            usuario_id=current_user.user_id, detalle=_item_dict(item),
+        )
         session.commit()
         return _item_dict(item)
     except HTTPException:
+        session.rollback()
         raise
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+# Antes de /inventario/items/{item_id}: si no, "orden" se lee como id (422).
+@router.put("/inventario/items/orden")
+def ordenar_items_inventario(
+    body: ItemsInventarioOrdenRequest,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_GERENCIA)),
+):
+    """Recibe todos los items en el orden nuevo y renumera orden_conteo (1..N).
+    El conteo diario agrupa por tipo y ordena por orden_conteo dentro de cada uno."""
+    session = Session()
+    try:
+        items = session.execute(
+            select(ItemInventario).order_by(ItemInventario.orden_conteo, ItemInventario.id)
+        ).scalars().all()
+        por_id = {i.id: i for i in items}
+        if len(body.ids) != len(set(body.ids)) or set(body.ids) != set(por_id):
+            raise HTTPException(
+                status_code=400,
+                detail="Envía todos los items, cada uno una sola vez. Recarga la página e intenta de nuevo.",
+            )
+        antes = [i.id for i in items]
+        for posicion, iid in enumerate(body.ids, start=1):
+            por_id[iid].orden_conteo = posicion
+        if body.ids != antes:
+            registrar_auditoria(
+                session, accion="INVENTARIO_ITEMS_ORDENADOS", entidad="item_inventario", entidad_id=None,
+                usuario_id=current_user.user_id, detalle={"antes": antes, "despues": list(body.ids)},
+            )
+        session.commit()
+        return [_item_dict(por_id[iid]) for iid in body.ids]
     finally:
         session.close()
 
@@ -659,6 +714,8 @@ def actualizar_item_inventario(
     body: ItemInventarioUpdate,
     current_user: TokenData = Depends(requiere_rol(*_ROLES_GERENCIA)),
 ):
+    """Nombre, tipo, unidad, orden o activo. No se desactiva un item que esté
+    en la receta de un producto activo del menú (409)."""
     session = Session()
     try:
         item = session.get(ItemInventario, item_id)
@@ -667,14 +724,40 @@ def actualizar_item_inventario(
         # Catálogo global: punto_id es NULL y esto no filtra nada. Se deja por
         # si algún item quedara etiquetado a una tienda.
         exigir_acceso_a_punto(current_user, item.punto_id)
+        antes = _item_dict(item)
         updates = body.model_dump(exclude_unset=True)
+        if updates.get("nombre") is not None:
+            _validar_nombre_item_unico(session, updates["nombre"], excluir_id=item.id)
+        if updates.get("activo") is False and item.activo:
+            productos = session.execute(
+                select(ProductoMenu.nombre)
+                .join(ProductoComponente, ProductoComponente.producto_menu_id == ProductoMenu.id)
+                .where(ProductoComponente.item_inventario_id == item.id, ProductoMenu.activo.is_(True))
+                .distinct()
+                .order_by(ProductoMenu.nombre)
+            ).scalars().all()
+            if productos:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"'{item.nombre}' está en la receta de: {', '.join(productos)}. "
+                           "Quítalo de esas recetas (🧩 en Configuración → Menú) antes de desactivarlo.",
+                )
         for field, value in updates.items():
-            if field == "tipo" and value is not None:
+            if value is None and field in ("nombre", "tipo", "unidad", "orden_conteo", "activo"):
+                continue
+            if field == "tipo":
                 value = value.value if hasattr(value, "value") else value
             setattr(item, field, value)
+        despues = _item_dict(item)
+        if despues != antes:
+            registrar_auditoria(
+                session, accion="INVENTARIO_ITEM_ACTUALIZADO", entidad="item_inventario", entidad_id=item.id,
+                usuario_id=current_user.user_id, detalle={"antes": antes, "despues": despues},
+            )
         session.commit()
-        return _item_dict(item)
+        return despues
     except HTTPException:
+        session.rollback()
         raise
     except Exception as e:
         session.rollback()
@@ -685,6 +768,8 @@ def actualizar_item_inventario(
 
 @router.get("/inventario/items")
 def listar_items_inventario(
+    # Inactivos solo para gerencia (pestaña Inventario de Configuración).
+    incluir_inactivos: bool = Query(default=False),
     # Catálogo, no información sensible - también accesible a gerente_central
     # (lo necesita para el selector de item en /central/reglas), sin ampliar
     # _ROLES_TIENDA global (que también protege caja/gastos/desperdicios).
@@ -692,11 +777,10 @@ def listar_items_inventario(
 ):
     session = Session()
     try:
-        items = session.execute(
-            select(ItemInventario)
-            .where(ItemInventario.activo.is_(True))
-            .order_by(ItemInventario.orden_conteo)
-        ).scalars().all()
+        stmt = select(ItemInventario).order_by(ItemInventario.orden_conteo, ItemInventario.id)
+        if not (incluir_inactivos and current_user.rol in _ROLES_GERENCIA):
+            stmt = stmt.where(ItemInventario.activo.is_(True))
+        items = session.execute(stmt).scalars().all()
         return [_item_dict(i) for i in items]
     finally:
         session.close()
