@@ -37,11 +37,12 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 
 ## Menú: productos y categorías (migraciones 015 y 017)
 - Las categorías viven en la tabla categorias_menu, no en el navegador. productos_menu.categoria guarda la clave, que no cambia; nombre, emoji y posición sí.
-- Nueva orden muestra las categorías activas en el orden de posición (gerencia lo cambia con ▲ ▼ en Configuración → Menú) y oculta las que no tienen productos. Dentro de cada categoría, los productos van del precio mayor al menor.
+- Nueva orden muestra las categorías activas en el orden de posición (gerencia lo cambia con ▲ ▼ en Configuración → Menú) y oculta las que no tienen productos. Dentro de cada categoría, los productos van del precio menor al mayor (cambio pedido el 2026-11-26; antes era de mayor a menor).
 - Orden inicial: Combos, Costillas, Pollos, Guarniciones, Bebidas, Extras. "Pollo por piezas" se creó inactiva para que el POS siguiera igual que antes (nunca aparecía en Nueva orden). Antes de activarla, revisar para qué se usan sus productos (Pechuga y Ala, Cuadril y Pierna).
 - Categorías y productos no se borran de la base: se desactivan. Una categoría con productos activos no se desactiva (409). Eliminar un producto (✕ en Configuración) lo deja con activo = false; las órdenes guardan nombre y precio, y no hay botón para reactivarlo.
 - Solo gerente_general y admin administran el menú y las categorías; cualquier rol las lee.
-- Items de inventario: se administran en Configuración → Inventario (gerente_general y admin). Catálogo de empresa (punto_id NULL), agrupado por tipo: vendible, insumo, desechable. orden_conteo define el orden del Inventario Diario dentro de cada tipo. Nombre único sin importar mayúsculas. No se borran: se desactivan, y no se desactiva un item que esté en la receta de un producto activo (409). Para que una venta descuente un item, se agrega a la receta del producto (🧩).
+- Items de inventario: se administran en Configuración → Inventario (gerente_general y admin). Catálogo de empresa (punto_id NULL), agrupado por tipo: vendible, insumo, desechable. orden_conteo define el orden del Inventario Diario dentro de cada tipo. Nombre único sin importar mayúsculas. No se borran: se desactivan, y no se desactiva un item que esté en la receta de un producto activo (409). Para que una venta descuente un item, se agrega a la receta del producto (🧩); el selector de la receta agrupa los items por tipo.
+- En "Personalizar" (combos), los grupos elegibles salen en el orden de su número de grupo en la receta (grupo 1 arriba). Para cambiar ese orden se ajusta el número de grupo en la receta.
 
 ## Impresión
 - Diseño: docs/DISENO_IMPRESION.md (fuente de verdad). Leerlo antes de tocar impresión o cobro.
@@ -80,7 +81,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 ## Estado al cierre de la última sesión
 
 **Producción**
-- Commit en producción: backend y frontend 65a627c (2026-11-26), sin migración nueva (sigue 017); bundle index-7d046450.js. Validado en local por Jorge; falta validarlo en producción.
+- Commit en producción: backend 65a627c y frontend 1ca331d (2026-11-26), migración 017; bundle index-7d046450.js → index-8a4f9906.js. Validado en local por Jorge; falta validarlo en producción. El servidor (/opt/FoodOps) sigue en 65a627c: el frontend se sube con rsync y no depende del git del servidor.
 - Montos en quetzales: el frontend formatea todos los importes con formatQ() de foodops-web/src/utils/moneda.js (Q1,234.50, -Q5.00). No usar "$", toFixed a mano ni Intl con GTQ. El ticket (utils/ticket.js) mantiene su propio formato con Q.
 - Tras desplegar frontend, purgar Cloudflare; los navegadores con la PWA abierta pueden necesitar cerrar y volver a abrir.
 - Cobro en efectivo verificado: el vendedor registra, el responsable confirma, el cuadre cuenta solo COBRADA.
@@ -95,13 +96,14 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - En producción desde 2026-11-26: personal de cocina y responsable por orden (migración 016). Las 34 órdenes previas quedaron con exige_responsable_cocina = false.
 - En producción desde 2026-11-26 (d7fc598): eliminar producto del menú con borrado lógico, y categorías en la base con posición configurable (migración 017). Validado por Jorge.
 - En producción desde 2026-11-26 (65a627c): pestaña Inventario en Configuración para mantener los items de inventario.
+- En producción desde 2026-11-26 (1ca331d, solo frontend): selector de componentes agrupado por tipo, grupos de Personalizar en el orden de la receta y productos de menor a mayor precio.
 - Agente de impresión en Centro: imprime tickets de venta reales con CP858 y corte (2026-11-22). escpos.py se instala a mano en cada tienda; Jordán y Auxiliar no lo tienen.
 
 **Seguridad pendiente**
 - El historial de Git fue reescrito (los secretos ya no están en main). Quedan pendientes: solicitud a GitHub Support para purgar los commits anteriores a 755d717; revisar alertas de Secret Scanning; revisar forks.
 - Hay respaldos con valores viejos en el servidor (/root/). Borrarlos cuando la producción esté estable varios días. Incluye /root/frontend-dist-previo-20261106 (frontend anterior al cambio a Q) y /root/frontend-dist-previo-20261107 (frontend anterior al despliegue de 4bff6c2).
 - Respaldo de la base previo a las migraciones 013 y 014: /root/backups/ en el servidor y ~/respaldos-foodops/ en la máquina local. Contiene datos de producción: borrarlo junto con los demás respaldos.
-- Respaldos posteriores en /root/, también con datos de producción: backup_pre_lote_20261116_0702.sql.gz, env_pre_lote.bak y frontend-dist-pre-lote/ (2026-11-16); backup_pre_contenido_20261124_0548.sql.gz y env_pre_contenido.bak (2026-11-24); backup_pre_personal_cocina_20261126_0033.sql.gz y frontend-dist-pre-personal-cocina/ (2026-11-26, con copia en ~/respaldos-foodops/); backup_pre_categorias_20261126_0156.sql.gz y frontend-dist-pre-categorias/ (2026-11-26, con copia en ~/respaldos-foodops/); backup_pre_items_20261126_0219.sql.gz y frontend-dist-pre-items/ (2026-11-26, con copia en ~/respaldos-foodops/). Borrarlos con los demás.
+- Respaldos posteriores en /root/, también con datos de producción: backup_pre_lote_20261116_0702.sql.gz, env_pre_lote.bak y frontend-dist-pre-lote/ (2026-11-16); backup_pre_contenido_20261124_0548.sql.gz y env_pre_contenido.bak (2026-11-24); backup_pre_personal_cocina_20261126_0033.sql.gz y frontend-dist-pre-personal-cocina/ (2026-11-26, con copia en ~/respaldos-foodops/); backup_pre_categorias_20261126_0156.sql.gz y frontend-dist-pre-categorias/ (2026-11-26, con copia en ~/respaldos-foodops/); backup_pre_items_20261126_0219.sql.gz y frontend-dist-pre-items/ (2026-11-26, con copia en ~/respaldos-foodops/); frontend-dist-pre-selector/ (2026-11-26, frontend index-7d046450.js). Borrarlos con los demás.
 - Deuda de Cloudflare: la regla "Agente impresion" deja pasar /api/impresion/agente/* sin verificar el token en Cloudflare (Skip de Browser Integrity Check). El backend sí valida el token en cada petición. Pendiente: endurecer la regla cuando el plan lo permita, o exigir un header.
 
 **Reglas aprendidas hoy (obligatorias)**
