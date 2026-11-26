@@ -378,3 +378,41 @@ class PersonalCocinaUpdate(BaseModel):
 
 class ResponsableCocinaRequest(BaseModel):
     personal_id: int
+
+
+# ---------------------------------------------------------------------------
+# Categorías del menú (migración 017)
+# ---------------------------------------------------------------------------
+
+
+def _texto_categoria(v: str) -> str:
+    v = " ".join(v.split())
+    if not v:
+        raise ValueError("El nombre es obligatorio")
+    return v
+
+
+class CategoriaMenuCreate(BaseModel):
+    nombre: Annotated[str, Field(max_length=50)]
+    emoji: Optional[Annotated[str, Field(max_length=16)]] = None
+
+    @field_validator("nombre")
+    @classmethod
+    def _limpiar_nombre(cls, v: str) -> str:
+        return _texto_categoria(v)
+
+
+class CategoriaMenuUpdate(BaseModel):
+    nombre: Optional[Annotated[str, Field(max_length=50)]] = None
+    emoji: Optional[Annotated[str, Field(max_length=16)]] = None
+    activo: Optional[bool] = None
+
+    @field_validator("nombre")
+    @classmethod
+    def _limpiar_nombre(cls, v):
+        return _texto_categoria(v) if v is not None else v
+
+
+class CategoriasOrdenRequest(BaseModel):
+    # Todas las categorías (activas e inactivas), en el orden nuevo.
+    ids: Annotated[list[int], Field(min_length=1)]

@@ -1,5 +1,7 @@
 """CRUD de catálogo de productos + receta (producto_componentes), desde ConfigView"""
 import logging
+import re
+import unicodedata
 
 from typing import Optional
 
@@ -8,7 +10,13 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from foodops.core.audit import registrar_auditoria
-from foodops.core.auth import TokenData, exigir_acceso_a_punto, requiere_rol, resolver_punto_id
+from foodops.core.auth import (
+    TokenData,
+    exigir_acceso_a_punto,
+    get_current_user,
+    requiere_rol,
+    resolver_punto_id,
+)
 from foodops.core.config import settings
 from foodops.core.permisos_ordenes import (
     ROLES_ADMINISTRAR_PERSONAL_COCINA,
@@ -16,8 +24,14 @@ from foodops.core.permisos_ordenes import (
 )
 from foodops.db.models import PersonalCocina
 from foodops.db.models_caja import ItemInventario
-from foodops.db.models_stock import ProductoComponente, ProductoMenu
-from foodops.domain.schemas import PersonalCocinaCreate, PersonalCocinaUpdate
+from foodops.db.models_stock import CategoriaMenu, ProductoComponente, ProductoMenu
+from foodops.domain.schemas import (
+    CategoriaMenuCreate,
+    CategoriaMenuUpdate,
+    CategoriasOrdenRequest,
+    PersonalCocinaCreate,
+    PersonalCocinaUpdate,
+)
 from foodops.domain.schemas_stock import (
     ProductoConComponentesCreate,
     ProductoConComponentesUpdate,
@@ -283,6 +297,157 @@ def eliminar_producto_config(
         )
         session.commit()
         return {"id": producto.id, "nombre": producto.nombre, "activo": False}
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Categorías del menú (migración 017). Las lee cualquier rol (el POS las
+# necesita para Nueva orden); las administra gerencia. La clave es la que
+# guarda productos_menu.categoria y no cambia. Sin DELETE: se desactiva, y no
+# se desactiva una categoría con productos activos.
+# ---------------------------------------------------------------------------
+
+
+def _categoria_dict(c: CategoriaMenu) -> dict:
+    return {"id": c.id, "clave": c.clave, "nombre": c.nombre, "emoji": c.emoji,
+            "posicion": c.posicion, "activo": c.activo}
+
+
+def _clave_desde_nombre(nombre: str) -> str:
+    sin_acentos = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode()
+    clave = re.sub(r"[^a-z0-9]+", "_", sin_acentos.lower()).strip("_")[:30].strip("_")
+    if not clave:
+        raise HTTPException(status_code=422, detail="El nombre debe tener letras o números")
+    return clave
+
+
+def _validar_nombre_categoria_unico(session, nombre: str, excluir_id: int = None) -> None:
+    stmt = select(CategoriaMenu).where(func.lower(CategoriaMenu.nombre) == nombre.lower())
+    if excluir_id is not None:
+        stmt = stmt.where(CategoriaMenu.id != excluir_id)
+    if session.execute(stmt).scalars().first():
+        raise HTTPException(status_code=400, detail=f"Ya existe una categoría llamada '{nombre}' (activa o inactiva)")
+
+
+def _ordenadas(session):
+    return session.execute(
+        select(CategoriaMenu).order_by(CategoriaMenu.posicion, CategoriaMenu.id)
+    ).scalars().all()
+
+
+@router.get("/categorias")
+def listar_categorias(
+    incluir_inactivas: bool = Query(default=False),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Categorías en orden de posición. Las inactivas solo para gerencia."""
+    session = Session()
+    try:
+        cats = _ordenadas(session)
+        if not (incluir_inactivas and current_user.rol in _ROLES_GERENCIA):
+            cats = [c for c in cats if c.activo]
+        return [_categoria_dict(c) for c in cats]
+    finally:
+        session.close()
+
+
+@router.post("/categorias", status_code=201)
+def crear_categoria(
+    body: CategoriaMenuCreate,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_GERENCIA)),
+):
+    """Crea la categoría al final de la lista."""
+    session = Session()
+    try:
+        clave = _clave_desde_nombre(body.nombre)
+        if session.execute(select(CategoriaMenu).where(CategoriaMenu.clave == clave)).scalars().first():
+            raise HTTPException(status_code=400, detail=f"Ya existe una categoría con la clave '{clave}' (activa o inactiva)")
+        _validar_nombre_categoria_unico(session, body.nombre)
+        ultima = session.execute(select(func.max(CategoriaMenu.posicion))).scalar() or 0
+        cat = CategoriaMenu(clave=clave, nombre=body.nombre, emoji=(body.emoji or "").strip() or None,
+                            posicion=ultima + 1, activo=True)
+        session.add(cat)
+        session.flush()
+        registrar_auditoria(
+            session, accion="CATEGORIA_MENU_CREADA", entidad="categoria_menu", entidad_id=cat.id,
+            usuario_id=current_user.user_id, detalle=_categoria_dict(cat),
+        )
+        session.commit()
+        return _categoria_dict(cat)
+    finally:
+        session.close()
+
+
+@router.patch("/categorias/{categoria_id}")
+def actualizar_categoria(
+    categoria_id: int,
+    body: CategoriaMenuUpdate,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_GERENCIA)),
+):
+    """Nombre, emoji o activo. La clave no cambia."""
+    session = Session()
+    try:
+        cat = session.get(CategoriaMenu, categoria_id)
+        if not cat:
+            raise HTTPException(status_code=404, detail="Categoría no encontrada")
+        antes = _categoria_dict(cat)
+        if body.nombre is not None:
+            _validar_nombre_categoria_unico(session, body.nombre, excluir_id=cat.id)
+            cat.nombre = body.nombre
+        if "emoji" in body.model_fields_set:
+            cat.emoji = (body.emoji or "").strip() or None
+        if body.activo is False and cat.activo:
+            activos = session.execute(
+                select(func.count()).select_from(ProductoMenu).where(
+                    ProductoMenu.categoria == cat.clave, ProductoMenu.activo.is_(True))
+            ).scalar()
+            if activos:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"'{cat.nombre}' tiene {activos} producto(s) activo(s). "
+                           "Elimínalos o muévelos a otra categoría antes de desactivarla.",
+                )
+        if body.activo is not None:
+            cat.activo = body.activo
+        despues = _categoria_dict(cat)
+        if despues != antes:
+            registrar_auditoria(
+                session, accion="CATEGORIA_MENU_ACTUALIZADA", entidad="categoria_menu", entidad_id=cat.id,
+                usuario_id=current_user.user_id, detalle={"antes": antes, "despues": despues},
+            )
+        session.commit()
+        return despues
+    finally:
+        session.close()
+
+
+@router.put("/categorias/orden")
+def ordenar_categorias(
+    body: CategoriasOrdenRequest,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_GERENCIA)),
+):
+    """Recibe todas las categorías en el orden nuevo y renumera las posiciones."""
+    session = Session()
+    try:
+        cats = _ordenadas(session)
+        por_id = {c.id: c for c in cats}
+        if len(body.ids) != len(set(body.ids)) or set(body.ids) != set(por_id):
+            raise HTTPException(
+                status_code=400,
+                detail="Envía todas las categorías, cada una una sola vez. Recarga la página e intenta de nuevo.",
+            )
+        antes = [c.clave for c in cats]
+        for posicion, cid in enumerate(body.ids, start=1):
+            por_id[cid].posicion = posicion
+        despues = [por_id[cid].clave for cid in body.ids]
+        if despues != antes:
+            registrar_auditoria(
+                session, accion="CATEGORIAS_MENU_ORDENADAS", entidad="categoria_menu", entidad_id=None,
+                usuario_id=current_user.user_id, detalle={"antes": antes, "despues": despues},
+            )
+        session.commit()
+        return [_categoria_dict(por_id[cid]) for cid in body.ids]
     finally:
         session.close()
 
