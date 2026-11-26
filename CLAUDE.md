@@ -35,6 +35,13 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Sin responsable no se marca listo ni entregado (409). Excepción: órdenes anteriores a la migración 016 (exige_responsable_cocina = false).
 - Si una tienda no tiene personal activo, Cocina no puede marcar LISTO: cargar el personal antes de operar una tienda nueva.
 
+## Menú: productos y categorías (migraciones 015 y 017)
+- Las categorías viven en la tabla categorias_menu, no en el navegador. productos_menu.categoria guarda la clave, que no cambia; nombre, emoji y posición sí.
+- Nueva orden muestra las categorías activas en el orden de posición (gerencia lo cambia con ▲ ▼ en Configuración → Menú) y oculta las que no tienen productos. Dentro de cada categoría, los productos van del precio mayor al menor.
+- Orden inicial: Combos, Costillas, Pollos, Guarniciones, Bebidas, Extras. "Pollo por piezas" se creó inactiva para que el POS siguiera igual que antes (nunca aparecía en Nueva orden). Antes de activarla, revisar para qué se usan sus productos (Pechuga y Ala, Cuadril y Pierna).
+- Categorías y productos no se borran de la base: se desactivan. Una categoría con productos activos no se desactiva (409). Eliminar un producto (✕ en Configuración) lo deja con activo = false; las órdenes guardan nombre y precio, y no hay botón para reactivarlo.
+- Solo gerente_general y admin administran el menú y las categorías; cualquier rol las lee.
+
 ## Impresión
 - Diseño: docs/DISENO_IMPRESION.md (fuente de verdad). Leerlo antes de tocar impresión o cobro.
 - Agente de tienda: tools/agente_impresion/ (Python, corre en Windows). Documentación en tools/agente_impresion/README.md.
@@ -55,7 +62,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Frontend: Vue 3, Vite, Pinia. El build sale de foodops-web/dist y se sube al servidor, donde nginx lo sirve.
 - Las direcciones del servidor, las IPs y los dominios de producción están en la documentación de despliegue, no aquí. No los copies a ningún archivo del repositorio.
 - No hagas SSH, curl ni consultas SQL contra producción, salvo que Jorge lo pida de forma explícita para esa tarea.
-- Migración más reciente: 016_personal_cocina (local y producción).
+- Migración más reciente: 017_categorias_menu (local y producción).
 
 ## Reglas de trabajo
 - No hagas git push ni despliegues sin aprobación explícita de Jorge en el mensaje actual. Sin esa aprobación, Jorge lo hace a mano.
@@ -72,7 +79,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 ## Estado al cierre de la última sesión
 
 **Producción**
-- Commit en producción: backend y frontend 7af9ea7 (2026-11-26), con la migración 016; bundle index-7220593f.js. Validado en producción por Jorge.
+- Commit en producción: backend y frontend d7fc598 (2026-11-26), con la migración 017; bundle index-36807757.js. Pendiente de validar por Jorge. El anterior, 7af9ea7 (migración 016), sí está validado.
 - Montos en quetzales: el frontend formatea todos los importes con formatQ() de foodops-web/src/utils/moneda.js (Q1,234.50, -Q5.00). No usar "$", toFixed a mano ni Intl con GTQ. El ticket (utils/ticket.js) mantiene su propio formato con Q.
 - Tras desplegar frontend, purgar Cloudflare; los navegadores con la PWA abierta pueden necesitar cerrar y volver a abrir.
 - Cobro en efectivo verificado: el vendedor registra, el responsable confirma, el cuadre cuenta solo COBRADA.
@@ -85,13 +92,14 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - En producción desde 2026-11-16: rol tomador_orden con permisos por acción, importes de órdenes ajenas ocultos al vendedor, numero_orden sin colisiones y día local único para listado y caja.
 - En producción desde 2026-11-24: contenido del producto como campo único (migración 015); la columna descripcion sigue existiendo pero la API no la usa.
 - En producción desde 2026-11-26: personal de cocina y responsable por orden (migración 016). Las 34 órdenes previas quedaron con exige_responsable_cocina = false.
+- En producción desde 2026-11-26 (d7fc598): eliminar producto del menú con borrado lógico, y categorías en la base con posición configurable (migración 017).
 - Agente de impresión en Centro: imprime tickets de venta reales con CP858 y corte (2026-11-22). escpos.py se instala a mano en cada tienda; Jordán y Auxiliar no lo tienen.
 
 **Seguridad pendiente**
 - El historial de Git fue reescrito (los secretos ya no están en main). Quedan pendientes: solicitud a GitHub Support para purgar los commits anteriores a 755d717; revisar alertas de Secret Scanning; revisar forks.
 - Hay respaldos con valores viejos en el servidor (/root/). Borrarlos cuando la producción esté estable varios días. Incluye /root/frontend-dist-previo-20261106 (frontend anterior al cambio a Q) y /root/frontend-dist-previo-20261107 (frontend anterior al despliegue de 4bff6c2).
 - Respaldo de la base previo a las migraciones 013 y 014: /root/backups/ en el servidor y ~/respaldos-foodops/ en la máquina local. Contiene datos de producción: borrarlo junto con los demás respaldos.
-- Respaldos posteriores en /root/, también con datos de producción: backup_pre_lote_20261116_0702.sql.gz, env_pre_lote.bak y frontend-dist-pre-lote/ (2026-11-16); backup_pre_contenido_20261124_0548.sql.gz y env_pre_contenido.bak (2026-11-24); backup_pre_personal_cocina_20261126_0033.sql.gz y frontend-dist-pre-personal-cocina/ (2026-11-26, con copia en ~/respaldos-foodops/). Borrarlos con los demás.
+- Respaldos posteriores en /root/, también con datos de producción: backup_pre_lote_20261116_0702.sql.gz, env_pre_lote.bak y frontend-dist-pre-lote/ (2026-11-16); backup_pre_contenido_20261124_0548.sql.gz y env_pre_contenido.bak (2026-11-24); backup_pre_personal_cocina_20261126_0033.sql.gz y frontend-dist-pre-personal-cocina/ (2026-11-26, con copia en ~/respaldos-foodops/); backup_pre_categorias_20261126_0156.sql.gz y frontend-dist-pre-categorias/ (2026-11-26, con copia en ~/respaldos-foodops/). Borrarlos con los demás.
 - Deuda de Cloudflare: la regla "Agente impresion" deja pasar /api/impresion/agente/* sin verificar el token en Cloudflare (Skip de Browser Integrity Check). El backend sí valida el token en cada petición. Pendiente: endurecer la regla cuando el plan lo permita, o exigir un header.
 
 **Reglas aprendidas hoy (obligatorias)**
