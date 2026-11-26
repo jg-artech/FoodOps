@@ -32,6 +32,7 @@ from foodops.db.models import (
     Orden,
     OrdenEstado,
     OrdenItem,
+    PersonalCocina,
     PuntoVenta,
     TrabajoImpresion,
     Usuario,
@@ -120,10 +121,17 @@ def datos(S):
     return out
 
 
-def _orden_nueva(S, punto_id, estado=OrdenEstado.PENDIENTE):
+def _orden_nueva(S, punto_id, estado=OrdenEstado.PENDIENTE, con_responsable=False):
+    """con_responsable: la orden ya tiene responsable de cocina; sin él no
+    pasa a listo ni a entregado (migración 016)."""
     s = S()
     o = Orden(punto_id=punto_id, numero_orden=f"PV-{uuid.uuid4().hex[:12]}", metodo_pago=MetodoPago.EFECTIVO,
               total=50, estado=estado, estado_cobro="pendiente_recibir", cliente_nombre="Cliente")
+    if con_responsable:
+        persona = PersonalCocina(punto_id=punto_id, nombre=f"Cocina {uuid.uuid4().hex[:8]}")
+        s.add(persona)
+        s.flush()
+        o.responsable_cocina_id = persona.id
     s.add(o)
     s.commit()
     oid = o.id
@@ -193,7 +201,7 @@ def test_repartidor_no_marca_listo_ni_preparando(api, datos, S, estado):
 
 
 def test_repartidor_marca_entregado(api, datos, S):
-    orden_id = _orden_nueva(S, datos["a"], OrdenEstado.LISTO)
+    orden_id = _orden_nueva(S, datos["a"], OrdenEstado.LISTO, con_responsable=True)
     r = _status(api, datos["repartidor"], orden_id, "entregado")
     assert r.status_code == 200
     assert _estado(S, orden_id) == OrdenEstado.ENTREGADO
@@ -202,7 +210,7 @@ def test_repartidor_marca_entregado(api, datos, S):
 @pytest.mark.parametrize("rol", ["cocinero", "resp_tienda", "gerente_punto", "gerente_general", "admin"])
 @pytest.mark.parametrize("estado", ["preparando", "listo", "entregado"])
 def test_cocina_y_superiores_cambian_el_estado(api, datos, S, rol, estado):
-    orden_id = _orden_nueva(S, datos["a"])
+    orden_id = _orden_nueva(S, datos["a"], con_responsable=True)
     r = _status(api, datos[rol], orden_id, estado)
     assert r.status_code == 200
     assert _estado(S, orden_id) == OrdenEstado(estado)
