@@ -20,6 +20,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - La venta nunca depende de que el agente o la impresora funcionen.
 - Un trabajo ABRIR_CAJON caduca a los 120 segundos y se crea una sola vez por orden.
 - Cancelar una orden requiere motivo y la contraseña personal de quien cancela. El intento fallido cuenta en el bloqueo del login.
+- Solo se cancela por POST /api/ordenes/{id}/cancelar-cocina (Cocina) o POST /api/ordenes/{id}/cancelar (Órdenes). PUT /api/ordenes/{id}/status con estado cancelado responde 409 a todos los roles, y una orden cancelada no se reactiva.
 - Órdenes pendientes: pueden cancelarse desde Órdenes o Cocina por responsable, gerente de punto, gerente general o admin. El vendedor no cancela; se lo pide al responsable.
 - Órdenes pagadas: pueden cancelarse desde Órdenes, pero la devolución al cliente NO existe todavía. Hasta que exista, la caja queda con sobrante. Regla operativa: no cancelar órdenes pagadas; devolver por el método manual y dejar la orden como está.
 - No se cancela una orden pagada de un día con caja cerrada. (Regla vigente; implementación pendiente.)
@@ -108,6 +109,5 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 
 **Pendientes**
 - Devolución de órdenes pagadas (diseño pendiente).
-- PUT /api/ordenes/{id}/status sigue abierto para cancelar sin motivo ni contraseña. Cerrarlo es el siguiente paso de seguridad.
 - Órdenes activas antiguas en cocina (ORD-9 de hace casi 20 días): pueden cerrarse sin responsable; falta decidir si se cierran o se cancelan.
 - Huecos en los estados de la orden: PUT /status no valida transiciones ni deja auditoría; se puede marcar entregada una orden sin pagar; POST /cancelar acepta órdenes en listo o entregado.
