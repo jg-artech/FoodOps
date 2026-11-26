@@ -81,7 +81,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 ## Estado al cierre de la última sesión
 
 **Producción**
-- Commit en producción: backend 65a627c y frontend 1ca331d (2026-11-26), migración 017; bundle index-7d046450.js → index-8a4f9906.js. Validado en local por Jorge; falta validarlo en producción. El servidor (/opt/FoodOps) sigue en 65a627c: el frontend se sube con rsync y no depende del git del servidor.
+- Commit en producción: backend 65a627c y frontend 1ca331d (2026-11-26), migración 017; bundle index-7d046450.js → index-8a4f9906.js. Validado en local por Jorge; Cloudflare purgado. Todo está en origin/main; el git del servidor (/opt/FoodOps) sigue en 65a627c porque el frontend se sube con rsync (el próximo despliegue de backend lo pone al día).
 - Montos en quetzales: el frontend formatea todos los importes con formatQ() de foodops-web/src/utils/moneda.js (Q1,234.50, -Q5.00). No usar "$", toFixed a mano ni Intl con GTQ. El ticket (utils/ticket.js) mantiene su propio formato con Q.
 - Tras desplegar frontend, purgar Cloudflare; los navegadores con la PWA abierta pueden necesitar cerrar y volver a abrir.
 - Cobro en efectivo verificado: el vendedor registra, el responsable confirma, el cuadre cuenta solo COBRADA.
