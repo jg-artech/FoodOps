@@ -36,6 +36,20 @@ class ProductoMenu(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class CategoriaMenu(Base):
+    """Categoría del menú (migración 017). productos_menu.categoria guarda la
+    clave, que no cambia; nombre, emoji y posición sí. Sin borrado físico."""
+    __tablename__ = "categorias_menu"
+
+    id = Column(Integer, primary_key=True)
+    clave = Column(String(30), nullable=False, unique=True)
+    nombre = Column(String(50), nullable=False)
+    emoji = Column(String(16), nullable=True)
+    posicion = Column(Integer, nullable=False)
+    activo = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class ProductoComponente(Base):
     __tablename__ = "producto_componentes"
 
