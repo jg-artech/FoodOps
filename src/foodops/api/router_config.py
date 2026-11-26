@@ -110,7 +110,12 @@ def _validar_grupos(componentes) -> None:
 
 
 def _validar_nombre_unico(session, nombre: str, excluir_id: int = None) -> None:
-    stmt = select(ProductoMenu).where(func.lower(ProductoMenu.nombre) == nombre.strip().lower())
+    # Solo entre productos activos: un producto eliminado (activo = false) no
+    # aparta su nombre.
+    stmt = select(ProductoMenu).where(
+        func.lower(ProductoMenu.nombre) == nombre.strip().lower(),
+        ProductoMenu.activo.is_(True),
+    )
     if excluir_id is not None:
         stmt = stmt.where(ProductoMenu.id != excluir_id)
     if session.execute(stmt).scalars().first():
@@ -196,7 +201,7 @@ def actualizar_producto_config(
     session = Session()
     try:
         producto = session.get(ProductoMenu, producto_id)
-        if not producto:
+        if not producto or not producto.activo:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
         _validar_nombre_unico(session, body.nombre, excluir_id=producto_id)
@@ -247,6 +252,37 @@ def actualizar_producto_config(
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+@router.delete("/productos/{producto_id}")
+def eliminar_producto_config(
+    producto_id: int,
+    current_user: TokenData = Depends(requiere_rol(*_ROLES_GERENCIA)),
+):
+    """Quita el producto del menú (POS, Configuración y productos-menu).
+
+    No borra la fila: la marca activo = false. Las órdenes guardan el nombre y
+    el precio en sus items, y las que ya están en curso siguen descontando
+    inventario con la receta del producto."""
+    session = Session()
+    try:
+        producto = session.get(ProductoMenu, producto_id)
+        if not producto or not producto.activo:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+        producto.activo = False
+        registrar_auditoria(
+            session,
+            accion="ELIMINAR_PRODUCTO",
+            entidad="producto_menu",
+            entidad_id=producto.id,
+            usuario_id=current_user.user_id,
+            detalle={"nombre": producto.nombre, "categoria": producto.categoria,
+                     "precio": float(producto.precio)},
+        )
+        session.commit()
+        return {"id": producto.id, "nombre": producto.nombre, "activo": False}
     finally:
         session.close()
 
