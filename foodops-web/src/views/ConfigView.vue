@@ -476,9 +476,11 @@
             <select v-model.number="componenteModal.item_inventario_id" @change="onComponenteItemChange"
               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400">
               <option :value="null" disabled>Selecciona un item</option>
-              <option v-for="it in itemsInventario" :key="it.id" :value="it.id">
-                #{{ it.id }} {{ it.nombre }} ({{ it.tipo }})
-              </option>
+              <!-- Por tipo y en el orden del Inventario Diario: un item nuevo queda
+                   junto a los de su tipo, no al final de toda la lista. -->
+              <optgroup v-for="g in itemsInventarioPorTipo" :key="g.tipo" :label="g.label">
+                <option v-for="it in g.items" :key="it.id" :value="it.id">{{ it.nombre }} ({{ it.unidad }})</option>
+              </optgroup>
             </select>
           </div>
           <div class="flex gap-2">
@@ -931,6 +933,18 @@ async function cargarItemsInventario() {
 }
 onMounted(cargarItemsInventario)
 
+const GRUPOS_TIPO_ITEM = [
+  { tipo: 'vendible', label: 'Vendibles' },
+  { tipo: 'insumo', label: 'Insumos' },
+  { tipo: 'desechable', label: 'Desechables' },
+]
+const itemsInventarioPorTipo = computed(() => {
+  const grupos = GRUPOS_TIPO_ITEM.map((g) => ({ ...g, items: itemsInventario.value.filter((i) => i.tipo === g.tipo) }))
+  const otros = itemsInventario.value.filter((i) => !GRUPOS_TIPO_ITEM.some((g) => g.tipo === i.tipo))
+  if (otros.length) grupos.push({ tipo: 'otros', label: 'Otros', items: otros })
+  return grupos.filter((g) => g.items.length)
+})
+
 // ─── MODAL NUEVO / EDITAR PRODUCTO (+ componentes de inventario) ───
 const nuevoModal = reactive({
   visible: false, modo: 'crear', productoId: null, categoria: '', emoji: '', nombre: '',
@@ -1035,6 +1049,9 @@ const puedeConfirmarComponente = computed(() => {
 })
 
 function abrirNuevoComponente() {
+  // Recargar: un item agregado en la pestaña Inventario debe salir aquí sin
+  // tener que recargar la página.
+  cargarItemsInventario()
   Object.assign(componenteModal, {
     visible: true, item_inventario_id: null, cantidad: 1, unidad: '', elegible: false,
     grupoSeleccionado: 'nuevo', nombre_grupo: '',
