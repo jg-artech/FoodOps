@@ -25,6 +25,15 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - No se cancela una orden pagada de un día con caja cerrada. (Regla vigente; implementación pendiente.)
 - La devolución de dinero será un movimiento propio ligado a la orden, nunca un cambio de estado del cobro original.
 
+## Cocina: personal y responsable por orden (migración 016)
+- El personal de cocina es un catálogo por tienda (tabla personal_cocina), sin vínculo con los usuarios del sistema. No se borra: se desactiva.
+- Lo administran resp_tienda (solo su tienda), gerente_general y admin, en /config/personal-cocina. gerente_punto no lo administra.
+- Cada orden tiene un responsable de cocina. El cocinero elige a cualquier persona activa de su tienda solo si la orden aún no tiene responsable; reasignar es de resp_tienda, gerente_punto, gerente_general y admin.
+- La primera asignación pasa la orden de pendiente a preparando y guarda en_preparacion_at. Cada cambio queda en auditoría con antes y después.
+- No se cambia el responsable con la orden en listo, entregado o cancelado (409).
+- Sin responsable no se marca listo ni entregado (409). Excepción: órdenes anteriores a la migración 016 (exige_responsable_cocina = false).
+- Si una tienda no tiene personal activo, Cocina no puede marcar LISTO: cargar el personal antes de operar una tienda nueva.
+
 ## Impresión
 - Diseño: docs/DISENO_IMPRESION.md (fuente de verdad). Leerlo antes de tocar impresión o cobro.
 - Agente de tienda: tools/agente_impresion/ (Python, corre en Windows). Documentación en tools/agente_impresion/README.md.
@@ -45,10 +54,10 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Frontend: Vue 3, Vite, Pinia. El build sale de foodops-web/dist y se sube al servidor, donde nginx lo sirve.
 - Las direcciones del servidor, las IPs y los dominios de producción están en la documentación de despliegue, no aquí. No los copies a ningún archivo del repositorio.
 - No hagas SSH, curl ni consultas SQL contra producción, salvo que Jorge lo pida de forma explícita para esa tarea.
-- Migración más reciente: 014_cargo_entrega (local y producción).
+- Migración más reciente: 016_personal_cocina (local y producción).
 
 ## Reglas de trabajo
-- No hagas git push sin aprobación explícita de Jorge en el mensaje actual. Jorge lo hace a mano.
+- No hagas git push ni despliegues sin aprobación explícita de Jorge en el mensaje actual. Sin esa aprobación, Jorge lo hace a mano.
 - No leas archivos .env*, respaldos .bak, tokens ni credenciales. No imprimas URLs de conexión ni secretos en la salida.
 - No modifiques foodops-web/dev-dist/sw.js.
 - No generes tokens del agente ni hagas login contra producción.
@@ -62,7 +71,7 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 ## Estado al cierre de la última sesión
 
 **Producción**
-- Commit en producción: backend 4bff6c2 (2026-11-07), con las migraciones 013 y 014; frontend 55108d6 (2026-11-15, bundle index-eac3cc1f.js). Validado en producción.
+- Commit en producción: backend y frontend 7af9ea7 (2026-11-26), con la migración 016; bundle index-7220593f.js. Validado en producción por Jorge.
 - Montos en quetzales: el frontend formatea todos los importes con formatQ() de foodops-web/src/utils/moneda.js (Q1,234.50, -Q5.00). No usar "$", toFixed a mano ni Intl con GTQ. El ticket (utils/ticket.js) mantiene su propio formato con Q.
 - Tras desplegar frontend, purgar Cloudflare; los navegadores con la PWA abierta pueden necesitar cerrar y volver a abrir.
 - Cobro en efectivo verificado: el vendedor registra, el responsable confirma, el cuadre cuenta solo COBRADA.
@@ -72,12 +81,16 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 - Centro (tienda id 2): impresora_activa = true, cajon_activo = false. El cajón no se ha comprado: no activarlo. Jordán y Auxiliar siguen desactivadas (ver docs/RUNBOOK_ACTIVAR_CENTRO.md).
 
 - En producción desde 2026-11-07: facturación fase 1 (nombre obligatorio y datos fiscales), cargo de entrega con tope por tienda (Q200.00 en las 3 tiendas) y cancelación con motivo y contraseña en Órdenes y Cocina.
+- En producción desde 2026-11-16: rol tomador_orden con permisos por acción, importes de órdenes ajenas ocultos al vendedor, numero_orden sin colisiones y día local único para listado y caja.
+- En producción desde 2026-11-24: contenido del producto como campo único (migración 015); la columna descripcion sigue existiendo pero la API no la usa.
+- En producción desde 2026-11-26: personal de cocina y responsable por orden (migración 016). Las 34 órdenes previas quedaron con exige_responsable_cocina = false.
 - Agente de impresión en Centro: imprime tickets de venta reales con CP858 y corte (2026-11-22). escpos.py se instala a mano en cada tienda; Jordán y Auxiliar no lo tienen.
 
 **Seguridad pendiente**
 - El historial de Git fue reescrito (los secretos ya no están en main). Quedan pendientes: solicitud a GitHub Support para purgar los commits anteriores a 755d717; revisar alertas de Secret Scanning; revisar forks.
 - Hay respaldos con valores viejos en el servidor (/root/). Borrarlos cuando la producción esté estable varios días. Incluye /root/frontend-dist-previo-20261106 (frontend anterior al cambio a Q) y /root/frontend-dist-previo-20261107 (frontend anterior al despliegue de 4bff6c2).
 - Respaldo de la base previo a las migraciones 013 y 014: /root/backups/ en el servidor y ~/respaldos-foodops/ en la máquina local. Contiene datos de producción: borrarlo junto con los demás respaldos.
+- Respaldos posteriores en /root/, también con datos de producción: backup_pre_lote_20261116_0702.sql.gz, env_pre_lote.bak y frontend-dist-pre-lote/ (2026-11-16); backup_pre_contenido_20261124_0548.sql.gz y env_pre_contenido.bak (2026-11-24); backup_pre_personal_cocina_20261126_0033.sql.gz y frontend-dist-pre-personal-cocina/ (2026-11-26, con copia en ~/respaldos-foodops/). Borrarlos con los demás.
 - Deuda de Cloudflare: la regla "Agente impresion" deja pasar /api/impresion/agente/* sin verificar el token en Cloudflare (Skip de Browser Integrity Check). El backend sí valida el token en cada petición. Pendiente: endurecer la regla cuando el plan lo permita, o exigir un header.
 
 **Reglas aprendidas hoy (obligatorias)**
@@ -96,4 +109,5 @@ Restaurante "Asados a la Leña" con 3 tiendas: Local Centro (id 2), Local Jordá
 **Pendientes**
 - Devolución de órdenes pagadas (diseño pendiente).
 - PUT /api/ordenes/{id}/status sigue abierto para cancelar sin motivo ni contraseña. Cerrarlo es el siguiente paso de seguridad.
-- Órdenes activas antiguas en cocina (ORD-9 de hace casi 20 días): decidir qué hacer.
+- Órdenes activas antiguas en cocina (ORD-9 de hace casi 20 días): pueden cerrarse sin responsable; falta decidir si se cierran o se cancelan.
+- Huecos en los estados de la orden: PUT /status no valida transiciones ni deja auditoría; se puede marcar entregada una orden sin pagar; POST /cancelar acepta órdenes en listo o entregado.
