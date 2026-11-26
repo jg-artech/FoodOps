@@ -40,3 +40,36 @@ test('los demás roles no se restringen por quién tomó la orden', () => {
 test('sin sesión no hay botón', () => {
   assert.equal(puedeReimprimir(null, propia), false)
 })
+
+// ─── Responsable de cocina ───
+import { puedeElegirResponsable, faltaResponsable } from '../src/permisos.js'
+
+const cocinero = { user_id: 30, rol: 'cocinero', punto_id: 8 }
+const sinResponsable = { id: 5, estado: 'pendiente', responsable_cocina: null, exige_responsable_cocina: true }
+const conResponsable = { id: 6, estado: 'preparando', responsable_cocina: { id: 1, nombre: 'Ana' }, exige_responsable_cocina: true }
+
+test('el cocinero elige responsable solo si la orden no tiene', () => {
+  assert.equal(puedeElegirResponsable(cocinero, sinResponsable), true)
+  assert.equal(puedeElegirResponsable(cocinero, conResponsable), false)
+})
+
+test('gerencia reasigna mientras la orden no esté cerrada', () => {
+  for (const rol of ['resp_tienda', 'gerente_punto', 'gerente_general', 'admin']) {
+    assert.equal(puedeElegirResponsable({ rol }, conResponsable), true)
+    for (const estado of ['listo', 'entregado', 'cancelado']) {
+      assert.equal(puedeElegirResponsable({ rol }, { ...conResponsable, estado }), false)
+    }
+  }
+})
+
+test('vendedor y repartidor no eligen responsable', () => {
+  for (const rol of ['tomador_orden', 'repartidor']) {
+    assert.equal(puedeElegirResponsable({ rol }, sinResponsable), false)
+  }
+})
+
+test('falta responsable solo en órdenes que lo exigen', () => {
+  assert.equal(faltaResponsable(sinResponsable), true)
+  assert.equal(faltaResponsable(conResponsable), false)
+  assert.equal(faltaResponsable({ ...sinResponsable, exige_responsable_cocina: false }), false)
+})

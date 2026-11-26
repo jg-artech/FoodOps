@@ -22,7 +22,9 @@ import ReglasReabastecimientoView from '@/views/ReglasReabastecimientoView.vue'
 import PuntosVentaView from '@/views/PuntosVentaView.vue'
 import UsuariosView from '@/views/UsuariosView.vue'
 import CobrosPendientesView from '@/views/CobrosPendientesView.vue'
+import PersonalCocinaView from '@/views/PersonalCocinaView.vue'
 import {
+  ROLES_ADMINISTRAR_PERSONAL_COCINA,
   ROLES_CAJA,
   ROLES_CENTRAL,
   ROLES_CONFIRMAR_COBRO,
@@ -46,6 +48,9 @@ const routes = [
   { path: '/pos/ordenes', component: OrdersListView, meta: { requiresAuth: true } },
   { path: '/pos/cierre', component: DayClosureView, meta: { requiresAuth: true } },
   { path: '/pos/config', component: ConfigView, meta: { requiresAuth: true, roles: ROLES_GERENCIA } },
+  // Fuera de /pos/config: el responsable de tienda administra su personal
+  // pero no entra al resto de Configuración.
+  { path: '/config/personal-cocina', component: PersonalCocinaView, meta: { requiresAuth: true, roles: ROLES_ADMINISTRAR_PERSONAL_COCINA } },
   { path: '/cocina', component: KitchenView, meta: { requiresAuth: true, noNav: true } },
   { path: '/caja', component: CajaTiendaView, meta: { requiresAuth: true, roles: ROLES_CAJA } },
   { path: '/caja/inventario/:momento', component: InventarioView, meta: { requiresAuth: true, roles: ROLES_CAJA } },

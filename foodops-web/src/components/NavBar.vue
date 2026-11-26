@@ -74,7 +74,7 @@ import SelectorTienda from '@/components/SelectorTienda.vue'
 import { useAuthStore } from '@/store/index'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
-import { ROLES_CONFIRMAR_COBRO, ROLES_GERENCIA, ROLES_SOLO_POS, rutaInicio, tieneRol } from '@/permisos.js'
+import { ROLES_ADMINISTRAR_PERSONAL_COCINA, ROLES_CONFIRMAR_COBRO, ROLES_GERENCIA, ROLES_SOLO_POS, rutaInicio, tieneRol } from '@/permisos.js'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -92,6 +92,7 @@ const esGerenteGeneral = computed(() => tieneRol(auth.user, ROLES_GERENCIA))
 // gerente_punto sí entra aquí aunque no tenga acceso a caja/gastos/fondos
 // (ROLES_CAJA, otro set distinto). Ver src/permisos.js.
 const puedeConfirmarCobro = computed(() => tieneRol(auth.user, ROLES_CONFIRMAR_COBRO))
+const puedeAdministrarPersonal = computed(() => tieneRol(auth.user, ROLES_ADMINISTRAR_PERSONAL_COCINA))
 
 const cobrosPendientes = ref(0)
 let pollCobros = null
@@ -109,6 +110,7 @@ const enlaces = computed(() => tieneRol(auth.user, ROLES_SOLO_POS) ? [{ to: '/po
   esGerenteGeneral.value && { to: '/central/reglas', label: '⚙️ Reglas Abastecimiento' },
   esGerenteGeneral.value && { to: '/central/puntos', label: '🏪 Puntos de Venta' },
   esGerenteGeneral.value && { to: '/admin/usuarios', label: '👥 Usuarios' },
+  puedeAdministrarPersonal.value && { to: '/config/personal-cocina', label: '👨‍🍳 Personal cocina' },
   puedeConfirmarCobro.value && { to: '/caja/cobros-pendientes', label: '💵 Cobros', badge: cobrosPendientes.value || null },
   { to: '/cocina', label: 'Cocina', target: '_blank' },
 ].filter(Boolean))

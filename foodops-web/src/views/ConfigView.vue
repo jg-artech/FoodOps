@@ -2,7 +2,10 @@
   <div class="max-w-2xl mx-auto px-4 py-6">
     <div class="flex items-center justify-between mb-6">
       <h1 class="text-2xl font-bold text-gray-800">Configuración</h1>
-      <RouterLink to="/pos" class="text-sm text-gray-500 hover:text-gray-700">← POS</RouterLink>
+      <div class="flex items-center gap-4">
+        <RouterLink to="/config/personal-cocina" class="text-sm text-orange-600 hover:text-orange-700 font-semibold">👨‍🍳 Personal de cocina</RouterLink>
+        <RouterLink to="/pos" class="text-sm text-gray-500 hover:text-gray-700">← POS</RouterLink>
+      </div>
     </div>
 
     <!-- Pestañas -->

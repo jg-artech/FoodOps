@@ -74,3 +74,31 @@ export function puedeReimprimir(usuario, orden) {
 export function rutaInicio(usuario) {
   return tieneRol(usuario, ROLES_SOLO_POS) ? '/pos' : '/dashboard'
 }
+
+// core/permisos_ordenes.py: responsable de cocina (PUT /responsable-cocina).
+// Sin vínculo entre usuario y personal: el cocinero elige a cualquier persona
+// activa de su tienda, pero solo si la orden aún no tiene responsable.
+// Reasignar es de gerencia.
+export const ROLES_ASIGNAR_RESPONSABLE = ROLES_MARCAR_LISTO
+export const ROLES_REASIGNAR_RESPONSABLE = ['resp_tienda', 'gerente_punto', 'gerente_general', 'admin']
+
+// core/permisos_ordenes.py: ROLES_ADMINISTRAR_PERSONAL_COCINA.
+export const ROLES_ADMINISTRAR_PERSONAL_COCINA = ['resp_tienda', 'gerente_general', 'admin']
+
+// Estados en los que ya no se cambia el responsable (el backend responde 409).
+const ESTADOS_SIN_CAMBIO_DE_RESPONSABLE = ['listo', 'entregado', 'cancelado']
+
+// ¿Puede elegir o cambiar el responsable de esta orden? El cocinero, solo si
+// la orden no tiene responsable; gerencia, siempre que no esté cerrada.
+export function puedeElegirResponsable(usuario, orden) {
+  if (!tieneRol(usuario, ROLES_ASIGNAR_RESPONSABLE)) return false
+  if (ESTADOS_SIN_CAMBIO_DE_RESPONSABLE.includes(orden?.estado)) return false
+  if (orden?.responsable_cocina == null) return true
+  return tieneRol(usuario, ROLES_REASIGNAR_RESPONSABLE)
+}
+
+// ¿Falta el responsable para marcar listo o entregado? Las órdenes anteriores
+// a la migración 016 (exige_responsable_cocina = false) no lo necesitan.
+export function faltaResponsable(orden) {
+  return orden?.exige_responsable_cocina === true && orden?.responsable_cocina == null
+}
