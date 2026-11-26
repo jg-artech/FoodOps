@@ -35,15 +35,18 @@
             class="text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded font-medium">
             En prep.
           </button>
+          <!-- Sin responsable de cocina no se marca listo (el backend responde 409) -->
           <button v-if="orden.estado === 'preparando' && puedeMarcarListo"
-            @click="cambiarEstado(orden, 'listo')"
-            class="text-xs bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded font-medium">
-            Listo
+            @click="cambiarEstado(orden, 'listo')" :disabled="faltaResponsable(orden)"
+            :title="faltaResponsable(orden) ? 'Asigna el responsable en Cocina' : ''"
+            class="text-xs bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+            {{ faltaResponsable(orden) ? TEXTO_ASIGNA_RESPONSABLE : ETIQUETAS_ESTADO.listo }}
           </button>
           <button v-if="orden.estado === 'listo' && puedeMarcarEntregado"
             @click="cambiarEstado(orden, 'entregado')"
-            class="text-xs bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded font-medium">
-            Entregado
+            :disabled="faltaResponsable(orden)"
+            class="text-xs bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+            {{ faltaResponsable(orden) ? TEXTO_ASIGNA_RESPONSABLE : ETIQUETAS_ESTADO.entregado }}
           </button>
           <!-- Cancelar: motivo y contraseña personal, también en órdenes cobradas -->
           <button v-if="['pendiente','preparando'].includes(orden.estado) && puedeCancelar"
@@ -65,8 +68,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/store/index'
 import OrderCard from '@/components/OrderCard.vue'
 import api from '@/services/api'
-import { ROLES_CANCELAR_COCINA, ROLES_MARCAR_ENTREGADO, ROLES_MARCAR_LISTO, tieneRol } from '@/permisos.js'
-import { mensajeErrorEstado } from '@/utils/ordenes.js'
+import { ROLES_CANCELAR_COCINA, ROLES_MARCAR_ENTREGADO, ROLES_MARCAR_LISTO, faltaResponsable, tieneRol } from '@/permisos.js'
+import { ETIQUETAS_ESTADO, TEXTO_ASIGNA_RESPONSABLE, mensajeErrorEstado } from '@/utils/ordenes.js'
 import CancelarOrdenModal from '@/components/CancelarOrdenModal.vue'
 
 const auth = useAuthStore()
@@ -78,10 +81,7 @@ let pollTimer = null
 
 const tabs = [
   { value: 'todas', label: 'Todas' },
-  { value: 'pendiente', label: 'Pendiente' },
-  { value: 'preparando', label: 'Preparando' },
-  { value: 'listo', label: 'Listo' },
-  { value: 'entregado', label: 'Entregado' },
+  ...['pendiente', 'preparando', 'listo', 'entregado'].map((value) => ({ value, label: ETIQUETAS_ESTADO[value] })),
 ]
 
 const ordenesFiltradas = computed(() => {

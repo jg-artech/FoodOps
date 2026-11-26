@@ -2,13 +2,42 @@
   <div class="rounded-2xl border-2 flex flex-col" :class="ticketBg">
     <!-- Header -->
     <div class="flex items-start justify-between p-4 pb-2">
-      <div>
+      <div class="min-w-0">
         <p class="font-bold text-xl">{{ orden.numero_orden }}</p>
+        <p v-if="orden.cliente_nombre" class="font-semibold text-base truncate" :title="orden.cliente_nombre">
+          {{ orden.cliente_nombre }}
+        </p>
         <p class="text-sm opacity-75">{{ horaFormato }} · hace {{ minutos }} min</p>
       </div>
-      <span class="text-sm font-bold px-3 py-1 rounded-full bg-black/20">
+      <span class="text-sm font-bold px-3 py-1 rounded-full bg-black/20 shrink-0">
         {{ minutos }}m
       </span>
+    </div>
+
+    <!-- Responsable de preparar la orden -->
+    <div class="px-4 pb-2">
+      <div class="flex items-center justify-between mb-1">
+        <label class="text-xs font-bold uppercase tracking-wider opacity-60" :for="`resp-${orden.id}`">
+          Responsable
+        </label>
+        <span class="text-xs font-bold px-2 py-0.5 rounded-full"
+          :class="orden.estado === 'preparando' ? 'bg-blue-300 text-blue-950' : 'bg-white/20'">
+          {{ etiquetaEstado(orden.estado) }}
+        </span>
+      </div>
+      <select v-if="puedeElegirResponsable" :id="`resp-${orden.id}`"
+        :value="orden.responsable_cocina?.id ?? ''" :disabled="asignando"
+        @change="$emit('asignar', orden, Number($event.target.value))"
+        class="w-full rounded-lg px-2 py-2 text-sm font-semibold bg-white/90 text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:opacity-60">
+        <option value="" disabled>{{ personal.length ? 'Elige quién la prepara' : 'Sin personal activo en esta tienda' }}</option>
+        <!-- Si el responsable actual fue desactivado, se sigue mostrando -->
+        <option v-if="orden.responsable_cocina && !personal.some(p => p.id === orden.responsable_cocina.id)"
+          :value="orden.responsable_cocina.id" disabled>{{ orden.responsable_cocina.nombre }}</option>
+        <option v-for="p in personal" :key="p.id" :value="p.id">{{ p.nombre }}</option>
+      </select>
+      <p v-else :id="`resp-${orden.id}`" class="text-sm font-semibold">
+        {{ orden.responsable_cocina?.nombre || 'Sin asignar' }}
+      </p>
     </div>
 
     <!-- Items con detalle de componentes, estilo comanda impresa: cada línea con su cantidad -->
@@ -41,7 +70,8 @@
     <!-- Cliente + quién tomó la orden -->
     <div class="px-4 py-2 border-t border-white/20 text-sm">
       <p>
-        <span v-if="orden.es_domicilio">🏠 Domicilio — <strong>{{ orden.cliente_nombre }}</strong></span>
+        <!-- El nombre del cliente va arriba, bajo el número de orden -->
+        <span v-if="orden.es_domicilio">🏠 Domicilio</span>
         <span v-else>🥡 Para llevar</span>
       </p>
       <p v-if="orden.cliente_telefono" class="opacity-70 text-xs mt-0.5">📱 {{ orden.cliente_telefono }}</p>
@@ -58,9 +88,10 @@
 
     <!-- Acciones -->
     <div class="flex gap-2 p-3 pt-0">
-      <button v-if="puedeMarcarListo" @click="$emit('cambiar', orden, 'listo')"
-        class="flex-1 bg-green-400 hover:bg-green-300 text-green-900 font-black py-3 rounded-xl text-lg transition">
-        ✓ LISTO
+      <!-- Sin responsable no se marca listo (el backend responde 409) -->
+      <button v-if="puedeMarcarListo" @click="$emit('cambiar', orden, 'listo')" :disabled="faltaResponsable(orden)"
+        class="flex-1 bg-green-400 hover:bg-green-300 text-green-900 font-black py-3 rounded-xl text-lg transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-green-400">
+        {{ faltaResponsable(orden) ? TEXTO_ASIGNA_RESPONSABLE : '✓ LISTO' }}
       </button>
       <!-- Solo roles que cancelan desde cocina, y nunca en una orden cobrada
            (el backend igual responde 403 / 409). -->
@@ -77,6 +108,8 @@
 import { computed } from 'vue'
 import { getMenu, contenidoDeItem } from '@/data/menu.js'
 import { itemsSinCargo } from '@/utils/cargoEntrega.js'
+import { TEXTO_ASIGNA_RESPONSABLE, etiquetaEstado } from '@/utils/ordenes.js'
+import { faltaResponsable } from '@/permisos.js'
 
 const props = defineProps({
   orden: { type: Object, required: true },
@@ -88,8 +121,13 @@ const props = defineProps({
   puedeCancelar: { type: Boolean, default: false },
   // Solo ROLES_MARCAR_LISTO (cocina y superiores; ni vendedor ni repartidor).
   puedeMarcarListo: { type: Boolean, default: false },
+  // Personal activo de la tienda de la orden (GET /api/config/personal-cocina).
+  personal: { type: Array, default: () => [] },
+  // permisos.js puedeElegirResponsable: el cocinero solo si no hay responsable.
+  puedeElegirResponsable: { type: Boolean, default: false },
+  asignando: { type: Boolean, default: false },
 })
-defineEmits(['cambiar', 'cancelar'])
+defineEmits(['cambiar', 'cancelar', 'asignar'])
 
 // El cargo de entrega no es algo que cocina prepare: no se muestra.
 const itemsCocina = computed(() => itemsSinCargo(props.orden.items))

@@ -40,8 +40,12 @@
           :recetas="recetas"
           :puede-cancelar="puedeCancelar"
           :puede-marcar-listo="puedeMarcarListo"
+          :personal="personalPorTienda[orden.punto_id] || []"
+          :puede-elegir-responsable="puedeElegirResponsable(auth.user, orden)"
+          :asignando="asignandoId === orden.id"
           @cambiar="cambiarEstado"
           @cancelar="ordenACancelar = $event"
+          @asignar="asignarResponsable"
         />
       </div>
     </div>
@@ -54,8 +58,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/store/index'
-import { ROLES_CANCELAR_COCINA, ROLES_MARCAR_LISTO, tieneRol } from '@/permisos.js'
-import { mensajeErrorEstado } from '@/utils/ordenes.js'
+import { ROLES_CANCELAR_COCINA, ROLES_MARCAR_LISTO, puedeElegirResponsable, tieneRol } from '@/permisos.js'
+import { mensajeErrorEstado, mensajeErrorResponsable } from '@/utils/ordenes.js'
 import CancelarOrdenModal from '@/components/CancelarOrdenModal.vue'
 import KitchenTicket from '@/components/KitchenTicket.vue'
 import api from '@/services/api'
@@ -114,6 +118,7 @@ async function fetchOrdenes() {
     prevIds = currentIds
     ordenes.value = activas
     conectado.value = true
+    cargarPersonalFaltante()
   } catch {
     conectado.value = false
   }
@@ -126,6 +131,48 @@ function quitarOrden(orden) {
   ordenes.value = ordenes.value.filter(o => o.id !== orden.id)
   prevIds.delete(orden.id)
   ordenACancelar.value = null
+}
+
+// Personal activo por tienda, para el selector de responsable. Gerencia puede
+// ver órdenes de varias tiendas: se pide el de cada tienda que aparezca.
+const personalPorTienda = ref({})
+const pidiendoPersonal = new Set()
+async function cargarPersonal(puntoId) {
+  if (puntoId == null || pidiendoPersonal.has(puntoId)) return
+  pidiendoPersonal.add(puntoId)
+  try {
+    const { data } = await api.get('/api/config/personal-cocina', { params: { punto_id: puntoId } })
+    personalPorTienda.value = { ...personalPorTienda.value, [puntoId]: data }
+  } catch {
+    // Sin la lista, el selector queda vacío; se reintenta en la próxima carga.
+    pidiendoPersonal.delete(puntoId)
+  }
+}
+function cargarPersonalFaltante() {
+  for (const o of ordenes.value) {
+    if (!(o.punto_id in personalPorTienda.value)) cargarPersonal(o.punto_id)
+  }
+}
+
+// Elegir responsable: PUT /responsable-cocina y se actualiza la tarjeta con
+// la respuesta, sin esperar a la próxima consulta.
+const asignandoId = ref(null)
+async function asignarResponsable(orden, personalId) {
+  if (!personalId) return
+  asignandoId.value = orden.id
+  try {
+    const { data } = await api.put(`/api/ordenes/${orden.id}/responsable-cocina`, { personal_id: personalId })
+    const tarjeta = ordenes.value.find((o) => o.id === orden.id)
+    if (tarjeta) Object.assign(tarjeta, {
+      estado: data.estado,
+      responsable_cocina: data.responsable_cocina,
+      en_preparacion_at: data.en_preparacion_at,
+    })
+  } catch (e) {
+    alert(mensajeErrorResponsable(e))
+  } finally {
+    asignandoId.value = null
+  }
 }
 
 async function cambiarEstado(orden, nuevoEstado) {
