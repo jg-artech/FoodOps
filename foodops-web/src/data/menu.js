@@ -201,7 +201,8 @@ export function getCategorias() {
   return categoriasMenu
 }
 
-// Dentro de cada categoría del POS, del precio mayor al menor (empate: nombre).
-export function ordenarPorPrecioDesc(items) {
-  return [...items].sort((a, b) => Number(b.precio) - Number(a.precio) || String(a.nombre).localeCompare(String(b.nombre), 'es'))
+// Dentro de cada categoría del POS, del precio menor al mayor (empate: nombre).
+// Pedido del 2026-11-26; antes era de mayor a menor.
+export function ordenarPorPrecio(items) {
+  return [...items].sort((a, b) => Number(a.precio) - Number(b.precio) || String(a.nombre).localeCompare(String(b.nombre), 'es'))
 }

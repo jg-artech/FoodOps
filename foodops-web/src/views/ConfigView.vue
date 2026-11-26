@@ -25,7 +25,7 @@
         <button @click="cargarProductos" class="shrink-0 font-semibold underline">Reintentar</button>
       </div>
       <p class="text-xs text-gray-400 mb-3">
-        Las categorías aparecen en Nueva orden en este mismo orden (cámbialo con ↑ ↓); dentro de cada una, los productos van del precio mayor al menor.
+        Las categorías aparecen en Nueva orden en este mismo orden (cámbialo con ↑ ↓); dentro de cada una, los productos van del precio menor al mayor.
       </p>
       <p v-if="errorCategorias" class="text-red-500 text-sm mb-3">{{ errorCategorias }}</p>
       <div v-for="(cat, i) in categorias" :key="cat.key" class="bg-white rounded-2xl border border-gray-200 shadow-sm mb-4 overflow-hidden">

@@ -340,7 +340,7 @@ import { formatQ } from '@/utils/moneda.js'
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/index'
-import { getMenu, getCategorias, cargarMenu, cargarCategorias, estadoMenu, ordenarPorPrecioDesc } from '@/data/menu.js'
+import { getMenu, getCategorias, cargarMenu, cargarCategorias, estadoMenu, ordenarPorPrecio } from '@/data/menu.js'
 import PiezaModal from '@/components/PiezaModal.vue'
 import SelectorComponentesModal from '@/components/SelectorComponentesModal.vue'
 import api from '@/services/api'
@@ -598,7 +598,7 @@ const componentesPreview = computed(() => {
 })
 
 function itemsPorCategoria(cat) {
-  return ordenarPorPrecioDesc(menuItems.filter(i => i.categoria === cat))
+  return ordenarPorPrecio(menuItems.filter(i => i.categoria === cat))
 }
 
 function getTotalQty(id) {
